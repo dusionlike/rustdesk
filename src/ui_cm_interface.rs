@@ -197,6 +197,29 @@ pub trait InvokeUiCM: Send + Clone + 'static + Sized {
     fn file_transfer_log(&self, action: &str, log: &str);
 }
 
+#[cfg(all(feature = "no-ui", not(any(target_os = "android", target_os = "ios"))))]
+#[derive(Clone, Default)]
+struct NoUiHandler;
+
+#[cfg(all(feature = "no-ui", not(any(target_os = "android", target_os = "ios"))))]
+impl InvokeUiCM for NoUiHandler {
+    fn add_connection(&self, _client: &Client) {}
+
+    fn remove_connection(&self, _id: i32, _close: bool) {}
+
+    fn new_message(&self, _id: i32, _text: String) {}
+
+    fn change_theme(&self, _dark: String) {}
+
+    fn change_language(&self) {}
+
+    fn show_elevation(&self, _show: bool) {}
+
+    fn update_voice_call_state(&self, _client: &Client) {}
+
+    fn file_transfer_log(&self, _action: &str, _log: &str) {}
+}
+
 impl<T: InvokeUiCM> Deref for ConnectionManager<T> {
     type Target = T;
 
@@ -805,6 +828,18 @@ pub async fn start_ipc<T: InvokeUiCM>(cm: ConnectionManager<T>) {
         }
     }
     quit_cm();
+}
+
+#[cfg(all(feature = "no-ui", not(any(target_os = "android", target_os = "ios"))))]
+#[inline]
+pub fn start_ipc_no_ui() {
+    #[cfg(target_os = "linux")]
+    std::thread::spawn(crate::ipc::start_pa);
+
+    let cm = ConnectionManager {
+        ui_handler: NoUiHandler,
+    };
+    start_ipc(cm);
 }
 
 #[cfg(target_os = "android")]

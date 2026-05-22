@@ -25,7 +25,8 @@ pub mod ipc;
     target_os = "android",
     target_os = "ios",
     feature = "cli",
-    feature = "flutter"
+    feature = "flutter",
+    feature = "no-ui"
 )))]
 pub mod ui;
 mod version;
@@ -53,7 +54,7 @@ mod port_forward;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub mod plugin;
 
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
+#[cfg(not(any(target_os = "android", target_os = "ios", feature = "no-ui")))]
 mod tray;
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]

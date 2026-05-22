@@ -662,12 +662,21 @@ pub fn core_main() -> Option<Vec<String>> {
             // call connection manager to establish connections
             // meanwhile, return true to call flutter window to show control panel
             crate::ui_interface::start_option_status_sync();
+            #[cfg(feature = "no-ui")]
+            {
+                crate::ui_cm_interface::start_ipc_no_ui();
+                return None;
+            }
         } else if args[0] == "--cm-no-ui" {
-            #[cfg(feature = "flutter")]
+            crate::ui_interface::start_option_status_sync();
+            #[cfg(all(feature = "flutter", not(feature = "no-ui")))]
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
             {
-                crate::ui_interface::start_option_status_sync();
                 crate::flutter::connection_manager::start_cm_no_ui();
+            }
+            #[cfg(feature = "no-ui")]
+            {
+                crate::ui_cm_interface::start_ipc_no_ui();
             }
             return None;
         } else if args[0] == "--whiteboard" {
