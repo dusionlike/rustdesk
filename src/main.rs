@@ -20,7 +20,8 @@ fn main() {
     target_os = "android",
     target_os = "ios",
     feature = "cli",
-    feature = "flutter"
+    feature = "flutter",
+    feature = "no-ui"
 )))]
 fn main() {
     #[cfg(all(windows, not(feature = "inline")))]
@@ -31,6 +32,27 @@ fn main() {
         ui::start(args);
     }
     common::global_clean();
+}
+
+#[cfg(all(
+    not(any(target_os = "android", target_os = "ios", feature = "cli", feature = "flutter")),
+    feature = "no-ui"
+))]
+fn main() {
+    let mut exit_code = 0;
+    if let Some(args) = crate::core_main::core_main() {
+        if !args.is_empty() {
+            eprintln!(
+                "UI is disabled in no-ui build. Unsupported arguments: {}",
+                args.join(" ")
+            );
+            exit_code = 1;
+        }
+    }
+    common::global_clean();
+    if exit_code != 0 {
+        std::process::exit(exit_code);
+    }
 }
 
 #[cfg(feature = "cli")]

@@ -191,6 +191,14 @@ pub fn core_main() -> Option<Vec<String>> {
             crate::platform::try_remove_temp_update_files();
             hbb_common::config::PeerConfig::preload_peers();
         }
+        #[cfg(feature = "no-ui")]
+        {
+            if !no_server {
+                crate::start_server(true, false);
+            }
+            return None;
+        }
+        #[cfg(not(feature = "no-ui"))]
         std::thread::spawn(move || crate::start_server(false, no_server));
     } else {
         #[cfg(windows)]
@@ -355,8 +363,13 @@ pub fn core_main() -> Option<Vec<String>> {
                 return None;
             }
         } else if args[0] == "--tray" {
+            #[cfg(not(feature = "no-ui"))]
             if !crate::check_process("--tray", true) {
                 crate::tray::start_tray();
+            }
+            #[cfg(feature = "no-ui")]
+            {
+                eprintln!("Tray is unavailable in no-ui build.");
             }
             return None;
         } else if args[0] == "--install-service" {
@@ -375,13 +388,16 @@ pub fn core_main() -> Option<Vec<String>> {
             log::info!("start --server with user {}", crate::username());
             #[cfg(target_os = "linux")]
             {
-                hbb_common::allow_err!(crate::platform::check_autostart_config());
-                std::process::Command::new("pkill")
-                    .arg("-f")
-                    .arg(&format!("{} --tray", crate::get_app_name().to_lowercase()))
-                    .status()
-                    .ok();
-                hbb_common::allow_err!(crate::run_me(vec!["--tray"]));
+                #[cfg(not(feature = "no-ui"))]
+                {
+                    hbb_common::allow_err!(crate::platform::check_autostart_config());
+                    std::process::Command::new("pkill")
+                        .arg("-f")
+                        .arg(&format!("{} --tray", crate::get_app_name().to_lowercase()))
+                        .status()
+                        .ok();
+                    hbb_common::allow_err!(crate::run_me(vec!["--tray"]));
+                }
             }
             #[cfg(windows)]
             crate::privacy_mode::restore_reg_connectivity(true, false);
@@ -391,10 +407,16 @@ pub fn core_main() -> Option<Vec<String>> {
             }
             #[cfg(target_os = "macos")]
             {
+                #[cfg(feature = "no-ui")]
+                crate::start_server(true, false);
+                #[cfg(not(feature = "no-ui"))]
                 let handler = std::thread::spawn(move || crate::start_server(true, false));
-                crate::tray::start_tray();
-                // prevent server exit when encountering errors from tray
-                hbb_common::allow_err!(handler.join());
+                #[cfg(not(feature = "no-ui"))]
+                {
+                    crate::tray::start_tray();
+                    // prevent server exit when encountering errors from tray
+                    hbb_common::allow_err!(handler.join());
+                }
             }
             return None;
         } else if args[0] == "--import-config" {
@@ -421,14 +443,14 @@ pub fn core_main() -> Option<Vec<String>> {
                 return None;
             }
             if args.len() == 2 {
-                if crate::platform::is_installed() && is_root() {
+                if can_manage_admin_commands() {
                     if let Err(err) = crate::ipc::set_permanent_password(args[1].to_owned()) {
                         println!("{err}");
                     } else {
                         println!("Done!");
                     }
                 } else {
-                    println!("Installation and administrative privileges required!");
+                    print_admin_command_error();
                 }
             }
             return None;
@@ -439,14 +461,14 @@ pub fn core_main() -> Option<Vec<String>> {
             }
             #[cfg(feature = "flutter")]
             if args.len() == 2 {
-                if crate::platform::is_installed() && is_root() {
+                if can_manage_admin_commands() {
                     if let Err(err) = crate::ipc::set_unlock_pin(args[1].to_owned(), false) {
                         println!("{err}");
                     } else {
                         println!("Done!");
                     }
                 } else {
-                    println!("Installation and administrative privileges required!");
+                    print_admin_command_error();
                 }
             }
             return None;
@@ -463,7 +485,7 @@ pub fn core_main() -> Option<Vec<String>> {
                 return None;
             }
             if args.len() == 2 {
-                if crate::platform::is_installed() && is_root() {
+                if can_manage_admin_commands() {
                     let old_id = crate::ipc::get_id();
                     let mut res = crate::ui_interface::change_id_shared(args[1].to_owned(), old_id);
                     if res.is_empty() {
@@ -471,13 +493,13 @@ pub fn core_main() -> Option<Vec<String>> {
                     }
                     println!("{}", res);
                 } else {
-                    println!("Installation and administrative privileges required!");
+                    print_admin_command_error();
                 }
             }
             return None;
         } else if args[0] == "--config" {
             if args.len() == 2 && !args[0].contains("host=") {
-                if crate::platform::is_installed() && is_root() {
+                if can_manage_admin_commands() {
                     // encrypted string used in renaming exe.
                     let name = if args[1].ends_with(".exe") {
                         args[1].to_owned()
@@ -496,7 +518,7 @@ pub fn core_main() -> Option<Vec<String>> {
                         }
                     }
                 } else {
-                    println!("Installation and administrative privileges required!");
+                    print_admin_command_error();
                 }
             }
             return None;
@@ -505,7 +527,7 @@ pub fn core_main() -> Option<Vec<String>> {
                 println!("Settings are disabled!");
                 return None;
             }
-            if crate::platform::is_installed() && is_root() {
+            if can_manage_admin_commands() {
                 if args.len() == 2 {
                     let options = crate::ipc::get_options();
                     println!("{}", options.get(&args[1]).unwrap_or(&"".to_owned()));
@@ -513,13 +535,13 @@ pub fn core_main() -> Option<Vec<String>> {
                     crate::ipc::set_option(&args[1], &args[2]);
                 }
             } else {
-                println!("Installation and administrative privileges required!");
+                print_admin_command_error();
             }
             return None;
         } else if args[0] == "--assign" {
             if config::Config::no_register_device() {
                 println!("Cannot assign an unregistrable device!");
-            } else if crate::platform::is_installed() && is_root() {
+            } else if can_manage_admin_commands() {
                 let max = args.len() - 1;
                 let pos = args.iter().position(|x| x == "--token").unwrap_or(max);
                 if pos < max {
@@ -618,7 +640,7 @@ pub fn core_main() -> Option<Vec<String>> {
                     println!("--token is required!");
                 }
             } else {
-                println!("Installation and administrative privileges required!");
+                print_admin_command_error();
             }
             return None;
         } else if args[0] == "--check-hwcodec-config" {
@@ -651,6 +673,11 @@ pub fn core_main() -> Option<Vec<String>> {
         } else if args[0] == "--whiteboard" {
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
             {
+                #[cfg(feature = "no-ui")]
+                {
+                    eprintln!("Whiteboard is unavailable in no-ui build.");
+                }
+                #[cfg(not(feature = "no-ui"))]
                 crate::whiteboard::run();
             }
             return None;
@@ -838,6 +865,31 @@ fn is_root() -> bool {
     }
     #[allow(unreachable_code)]
     crate::platform::is_root()
+}
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+#[inline]
+fn can_manage_admin_commands() -> bool {
+    if !is_root() {
+        return false;
+    }
+    #[cfg(feature = "no-ui")]
+    {
+        true
+    }
+    #[cfg(not(feature = "no-ui"))]
+    {
+        crate::platform::is_installed()
+    }
+}
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+#[inline]
+fn print_admin_command_error() {
+    #[cfg(feature = "no-ui")]
+    println!("Administrative privileges required!");
+    #[cfg(not(feature = "no-ui"))]
+    println!("Installation and administrative privileges required!");
 }
 
 /// Check if the executable is a Quick Support version.
