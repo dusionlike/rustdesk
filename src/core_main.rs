@@ -7,6 +7,8 @@ use crate::platform::breakdown_callback;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 use hbb_common::platform::register_breakdown_handler;
 use hbb_common::{config, log};
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+use std::fmt::Write as _;
 #[cfg(windows)]
 use tauri_winrt_notification::{Duration, Sound, Toast};
 
@@ -20,6 +22,298 @@ macro_rules! my_println{
             &format!("{}", format_args!($($arg)*))
         );
     };
+}
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+fn push_help_line(help: &mut String, command: &str, description: &str) {
+    let _ = writeln!(help, "  {command:<36} {description}");
+}
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+fn print_desktop_help() {
+    let exe_name = std::env::args()
+        .next()
+        .and_then(|arg| {
+            std::path::Path::new(&arg)
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+        })
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| "rustdesk".to_owned());
+    let mut help = String::new();
+
+    let _ = writeln!(help, "{} {}", crate::get_app_name(), crate::VERSION);
+    let _ = writeln!(help);
+    let _ = writeln!(help, "Usage:");
+    let _ = writeln!(help, "  {exe_name} [COMMAND] [ARGS]");
+    let _ = writeln!(help);
+    let _ = writeln!(
+        help,
+        "Without a command, the no-ui build starts the background server unless --no-server is set."
+    );
+    let _ = writeln!(help);
+
+    let _ = writeln!(help, "General commands:");
+    push_help_line(&mut help, "-h, --help", "Show this help and exit");
+    push_help_line(&mut help, "--version", "Print version and exit");
+    push_help_line(&mut help, "--build-date", "Print build date and exit");
+    push_help_line(
+        &mut help,
+        "--no-server",
+        "Do not start the background server when no command is given",
+    );
+    push_help_line(&mut help, "--server", "Start the background server");
+    push_help_line(&mut help, "--service", "Start as the OS service");
+    push_help_line(&mut help, "--install-service", "Install the OS service");
+    push_help_line(
+        &mut help,
+        "--uninstall-service",
+        "Uninstall the OS service",
+    );
+    #[cfg(feature = "no-ui")]
+    push_help_line(&mut help, "--cm", "Start the connection manager IPC service");
+    #[cfg(not(feature = "no-ui"))]
+    push_help_line(&mut help, "--cm", "Open the connection manager");
+    push_help_line(
+        &mut help,
+        "--cm-no-ui",
+        "Start the connection manager without UI",
+    );
+    push_help_line(&mut help, "--remove <PATH>", "Remove a file after a short delay");
+    let _ = writeln!(help);
+
+    let _ = writeln!(help, "Configuration commands:");
+    push_help_line(
+        &mut help,
+        "--import-config <PATH>",
+        "Import config from <PATH> and the matching *2.toml file",
+    );
+    push_help_line(
+        &mut help,
+        "--password <PASSWORD>",
+        "Set the permanent password",
+    );
+    #[cfg(feature = "flutter")]
+    push_help_line(
+        &mut help,
+        "--set-unlock-pin <PIN>",
+        "Set the unlock PIN",
+    );
+    #[cfg(not(feature = "flutter"))]
+    push_help_line(
+        &mut help,
+        "--set-unlock-pin <PIN>",
+        "Unavailable in this build",
+    );
+    push_help_line(&mut help, "--get-id", "Print the device ID");
+    push_help_line(&mut help, "--set-id <ID>", "Set the device ID");
+    push_help_line(
+        &mut help,
+        "--config <NAME>",
+        "Apply embedded custom-server config from a client name",
+    );
+    push_help_line(
+        &mut help,
+        "--option <KEY> [VALUE]",
+        "Get or set a named option",
+    );
+    push_help_line(
+        &mut help,
+        "--assign --token <TOKEN> [OPTIONS...]",
+        "Assign this device with an API token",
+    );
+    let _ = writeln!(help, "  Assignment options:");
+    push_help_line(&mut help, "--user_name <NAME>", "Bind to a user name");
+    push_help_line(
+        &mut help,
+        "--strategy_name <NAME>",
+        "Bind to a strategy name",
+    );
+    push_help_line(
+        &mut help,
+        "--address_book_name <NAME>",
+        "Bind to an address book",
+    );
+    push_help_line(
+        &mut help,
+        "--address_book_tag <TAG>",
+        "Set the address book tag",
+    );
+    push_help_line(
+        &mut help,
+        "--address_book_alias <ALIAS>",
+        "Set the address book alias",
+    );
+    push_help_line(
+        &mut help,
+        "--address_book_password <PASSWORD>",
+        "Set the address book password",
+    );
+    push_help_line(
+        &mut help,
+        "--address_book_note <NOTE>",
+        "Set the address book note",
+    );
+    push_help_line(
+        &mut help,
+        "--device_group_name <NAME>",
+        "Set the device group name",
+    );
+    push_help_line(&mut help, "--note <NOTE>", "Set the device note");
+    push_help_line(
+        &mut help,
+        "--device_username <NAME>",
+        "Set the device username",
+    );
+    push_help_line(
+        &mut help,
+        "--device_name <NAME>",
+        "Set the device name",
+    );
+    let _ = writeln!(help);
+
+    let _ = writeln!(help, "Build and maintenance commands:");
+    #[cfg(feature = "hwcodec")]
+    push_help_line(
+        &mut help,
+        "--check-hwcodec-config",
+        "Run the hardware codec helper",
+    );
+    #[cfg(not(feature = "hwcodec"))]
+    push_help_line(
+        &mut help,
+        "--check-hwcodec-config",
+        "Unavailable in this build",
+    );
+    #[cfg(windows)]
+    push_help_line(
+        &mut help,
+        "--terminal-helper [ARGS...]",
+        "Run the internal Windows terminal helper",
+    );
+    #[cfg(not(windows))]
+    push_help_line(
+        &mut help,
+        "--terminal-helper [ARGS...]",
+        "Unavailable on this platform",
+    );
+    #[cfg(feature = "no-ui")]
+    push_help_line(&mut help, "--tray", "Unavailable in no-ui build");
+    #[cfg(not(feature = "no-ui"))]
+    push_help_line(&mut help, "--tray", "Start the tray UI");
+    #[cfg(feature = "no-ui")]
+    push_help_line(&mut help, "--whiteboard", "Unavailable in no-ui build");
+    #[cfg(not(feature = "no-ui"))]
+    push_help_line(&mut help, "--whiteboard", "Open the whiteboard UI");
+    #[cfg(target_os = "linux")]
+    push_help_line(
+        &mut help,
+        "-gtk-sudo <ARGS...>",
+        "Run the internal GTK sudo helper",
+    );
+    let _ = writeln!(help);
+
+    #[cfg(windows)]
+    {
+        let _ = writeln!(help, "Windows-specific commands:");
+        push_help_line(
+            &mut help,
+            "--elevate",
+            "Internal helper to relaunch the process elevated",
+        );
+        push_help_line(
+            &mut help,
+            "--run-as-system",
+            "Internal helper to relaunch the process as SYSTEM",
+        );
+        push_help_line(&mut help, "--uninstall", "Uninstall RustDesk");
+        push_help_line(&mut help, "--update", "Run the update flow");
+        push_help_line(
+            &mut help,
+            "--after-install",
+            "Run the internal post-install step",
+        );
+        push_help_line(
+            &mut help,
+            "--before-uninstall",
+            "Run the internal pre-uninstall step",
+        );
+        push_help_line(
+            &mut help,
+            "--silent-install [EXTRA]",
+            "Run silent installation",
+        );
+        push_help_line(
+            &mut help,
+            "--uninstall-cert",
+            "Uninstall the RustDesk certificate",
+        );
+        push_help_line(
+            &mut help,
+            "--install-idd",
+            "Install or update the virtual display driver",
+        );
+        push_help_line(
+            &mut help,
+            "--portable-service",
+            "Run the internal portable service launcher",
+        );
+        push_help_line(
+            &mut help,
+            "--uninstall-amyuni-idd",
+            "Uninstall the Amyuni virtual display driver",
+        );
+        push_help_line(
+            &mut help,
+            "--install-remote-printer",
+            "Install or update the remote printer",
+        );
+        push_help_line(
+            &mut help,
+            "--uninstall-remote-printer",
+            "Uninstall the remote printer",
+        );
+        let _ = writeln!(help);
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let _ = writeln!(help, "macOS-specific commands:");
+        push_help_line(
+            &mut help,
+            "--update [DMG_PATH]",
+            "Update from a DMG or start the update flow",
+        );
+        let _ = writeln!(help);
+    }
+
+    #[cfg(all(feature = "flutter", feature = "plugin_framework"))]
+    {
+        let _ = writeln!(help, "Plugin commands:");
+        push_help_line(
+            &mut help,
+            "--plugin-install <ID> [URL]",
+            "Install a plugin",
+        );
+        push_help_line(
+            &mut help,
+            "--plugin-uninstall <ID>",
+            "Uninstall a plugin",
+        );
+        let _ = writeln!(help);
+    }
+
+    let _ = writeln!(help, "Notes:");
+    let _ = writeln!(
+        help,
+        "  Some configuration commands require administrative privileges."
+    );
+    let _ = writeln!(
+        help,
+        "  Commands marked as unavailable are recognized by this binary but disabled by platform or feature flags."
+    );
+
+    println!("{help}");
 }
 
 /// shared by flutter and sciter main function
@@ -128,7 +422,10 @@ pub fn core_main() -> Option<Vec<String>> {
         args.clear();
     }
     if args.len() > 0 {
-        if args[0] == "--version" {
+        if args[0] == "-h" || args[0] == "--help" {
+            print_desktop_help();
+            return None;
+        } else if args[0] == "--version" {
             println!("{}", crate::VERSION);
             return None;
         } else if args[0] == "--build-date" {
@@ -460,17 +757,23 @@ pub fn core_main() -> Option<Vec<String>> {
                 return None;
             }
             #[cfg(feature = "flutter")]
-            if args.len() == 2 {
-                if can_manage_admin_commands() {
-                    if let Err(err) = crate::ipc::set_unlock_pin(args[1].to_owned(), false) {
-                        println!("{err}");
+            {
+                if args.len() == 2 {
+                    if can_manage_admin_commands() {
+                        if let Err(err) = crate::ipc::set_unlock_pin(args[1].to_owned(), false) {
+                            println!("{err}");
+                        } else {
+                            println!("Done!");
+                        }
                     } else {
-                        println!("Done!");
+                        print_admin_command_error();
                     }
                 } else {
-                    print_admin_command_error();
+                    eprintln!("Usage: --set-unlock-pin <PIN>");
                 }
             }
+            #[cfg(not(feature = "flutter"))]
+            eprintln!("Unlock PIN is unavailable in this build.");
             return None;
         } else if args[0] == "--get-id" {
             println!("{}", crate::ipc::get_id());
@@ -646,6 +949,8 @@ pub fn core_main() -> Option<Vec<String>> {
         } else if args[0] == "--check-hwcodec-config" {
             #[cfg(feature = "hwcodec")]
             crate::ipc::hwcodec_process();
+            #[cfg(not(feature = "hwcodec"))]
+            eprintln!("Hardware codec support is unavailable in this build.");
             return None;
         } else if args[0] == "--terminal-helper" {
             // Terminal helper process - runs as user to create ConPTY
@@ -657,6 +962,8 @@ pub fn core_main() -> Option<Vec<String>> {
                     log::error!("Terminal helper failed: {}", e);
                 }
             }
+            #[cfg(not(target_os = "windows"))]
+            eprintln!("Terminal helper is only available on Windows.");
             return None;
         } else if args[0] == "--cm" {
             // call connection manager to establish connections

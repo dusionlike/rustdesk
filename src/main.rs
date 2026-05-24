@@ -46,6 +46,7 @@ fn main() {
                 "UI is disabled in no-ui build. Unsupported arguments: {}",
                 args.join(" ")
             );
+            eprintln!("Use --help to see the available no-ui commands.");
             exit_code = 1;
         }
     }
