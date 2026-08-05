@@ -358,7 +358,13 @@ fn ui_parent(
                         kill_child(child);
                     }
                     break;
-                } else if last_line.ends_with(":") {
+                } else if last_line.ends_with(":")
+                    || last_line.ends_with('：')
+                    // Some sudo implementations do not use the conventional
+                    // password prompt text. If the initial password is still
+                    // pending, use the PTY state as the prompt signal too.
+                    || initial_password.is_some()
+                {
                     match get_echo_turn_off(raw_fd) {
                         Ok(true) => {
                             log::debug!("get_echo_turn_off ok");
@@ -537,8 +543,11 @@ fn child(su_user: Option<String>, args: Vec<String>) -> ResultType<()> {
 }
 
 fn get_echo_turn_off(fd: RawFd) -> Result<bool, Error> {
-    let tios = termios::Termios::from_fd(fd)?;
-    for _ in 0..10 {
+    for _ in 0..100 {
+        // The child changes the PTY flags after writing the prompt. Read the
+        // flags on every iteration so slower platforms (e.g. Rockchip/Kylin)
+        // are not stuck with the state observed before sudo disabled echo.
+        let tios = termios::Termios::from_fd(fd)?;
         if tios.c_lflag & termios::ECHO == 0 {
             return Ok(true);
         }
