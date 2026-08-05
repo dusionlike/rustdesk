@@ -15,6 +15,19 @@ cmake_policy(SET CMP0063 NEW)
 
 # Load bundled libraries from the lib/ directory relative to the binary.
 set(CMAKE_INSTALL_RPATH "$ORIGIN/lib")
+set(RUSTDESK_ROCKCHIP_LINK_FLAGS "")
+
+# Rockchip/Kylin ARM64 images may resolve the Mali OpenGL stack from
+# ld.so.cache before the Mesa libraries used by Flutter. Keep the standard
+# ARM64 library directories ahead of the bundled libraries for this build
+# variant. Disable new dtags so the runner gets a transitive DT_RPATH rather
+# than a DT_RUNPATH; this also covers libraries loaded by the Flutter engine.
+if(DEFINED ENV{RUSTDESK_ROCKCHIP_LINUX})
+  set(CMAKE_INSTALL_RPATH "/lib/aarch64-linux-gnu;/usr/lib/aarch64-linux-gnu;$ORIGIN/lib")
+  set(CMAKE_BUILD_RPATH "/lib/aarch64-linux-gnu;/usr/lib/aarch64-linux-gnu;$ORIGIN/lib")
+  set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
+  set(RUSTDESK_ROCKCHIP_LINK_FLAGS "-Wl,--disable-new-dtags")
+endif()
 
 # Root filesystem for cross-building.
 if(FLUTTER_TARGET_PLATFORM_SYSROOT)
@@ -146,6 +159,7 @@ add_dependencies(${BINARY_NAME} flutter_assemble)
 set_target_properties(${BINARY_NAME}
   PROPERTIES
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/intermediates_do_not_run"
+  LINK_FLAGS "${RUSTDESK_ROCKCHIP_LINK_FLAGS}"
 )
 
 # Generated plugin build rules, which manage building the plugins and adding

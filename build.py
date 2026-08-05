@@ -36,10 +36,26 @@ flutter_build_dir_2 = f'flutter/{flutter_build_dir}'
 skip_cargo = False
 
 
-def get_deb_arch() -> str:
+def configure_flutter_build_dir(rockchip_linux):
+    global flutter_build_dir, flutter_build_dir_2
+    if rockchip_linux and not windows and not osx:
+        flutter_build_dir = 'build/linux/arm64/release/bundle/'
+        flutter_build_dir_2 = f'flutter/{flutter_build_dir}'
+
+
+def configure_rockchip_build(rockchip_linux):
+    if rockchip_linux:
+        os.environ['RUSTDESK_ROCKCHIP_LINUX'] = '1'
+
+
+def get_package_suffix(rockchip_linux):
+    return '-rockchip-aarch64' if rockchip_linux else ''
+
+
+def get_deb_arch(rockchip_linux=False) -> str:
     custom_arch = os.environ.get("DEB_ARCH")
     if custom_arch is None:
-        return "amd64"
+        return "arm64" if rockchip_linux else "amd64"
     return custom_arch
 
 def get_deb_extra_depends() -> str:
@@ -118,6 +134,11 @@ def make_parser():
              'Available: [Not used for now]. Special value is "ALL" and empty "". Default is empty.')
     parser.add_argument('--flutter', action='store_true',
                         help='Build flutter package', default=False)
+    parser.add_argument(
+        '--rockchip-linux',
+        action='store_true',
+        help='Build the Rockchip ARM64 Linux Flutter package'
+    )
     parser.add_argument(
         '--hwcodec',
         action='store_true',
@@ -346,6 +367,8 @@ def get_features(args):
         # this line builds the same capture backend with no wake code in the binary at all.
         # It is ALSO switchable at runtime; see OPTION_ENABLE_DRM_DISPLAY_WAKE.
         features.append('drm-wake')
+    if args.rockchip_linux:
+        features.append('rockchip-linux')
     if osx:
         if args.screencapturekit:
             features.append('screencapturekit')
@@ -353,7 +376,7 @@ def get_features(args):
     return features
 
 
-def generate_control_file(version):
+def generate_control_file(version, rockchip_linux=False):
     control_file_path = "../res/DEBIAN/control"
     system2('/bin/rm -rf %s' % control_file_path)
 
@@ -368,7 +391,7 @@ Depends: libgtk-3-0t64 | libgtk-3-0, libxcb-randr0, libxdo3 | libxdo4, libxfixes
 Recommends: libayatana-appindicator3-1
 Description: A remote control software.
 
-""" % (version, get_deb_arch(), get_deb_extra_depends())
+""" % (version, get_deb_arch(rockchip_linux), get_deb_extra_depends())
     file = open(control_file_path, "w")
     file.write(content)
     file.close()
@@ -696,12 +719,16 @@ def retarget_control_to_drm_variant():
         f.write(body)
 
 
-def build_flutter_deb(version, features):
+def build_flutter_deb(version, features, rockchip_linux=False):
     if not skip_cargo:
         system2(f'cargo build --locked --features {features} --lib --release')
         ffi_bindgen_function_refactor()
     os.chdir('flutter')
-    system2('flutter build linux --release')
+    flutter_command = (
+        'flutter-elinux build linux --verbose'
+        if rockchip_linux else 'flutter build linux --release'
+    )
+    system2(flutter_command)
     system2('mkdir -p tmpdeb/usr/bin/')
     system2('mkdir -p tmpdeb/usr/share/rustdesk')
     system2('mkdir -p tmpdeb/etc/rustdesk/')
@@ -745,7 +772,7 @@ def build_flutter_deb(version, features):
         stage_libdrmtap_into_deb(build_libdrmtap_so())
 
     system2('mkdir -p tmpdeb/DEBIAN')
-    generate_control_file(version)
+    generate_control_file(version, rockchip_linux)
     if ships_so:
         retarget_control_to_drm_variant()
     system2('cp -a ../res/DEBIAN/* tmpdeb/DEBIAN/')
@@ -754,10 +781,16 @@ def build_flutter_deb(version, features):
 
     system2('/bin/rm -rf tmpdeb/')
     system2('/bin/rm -rf ../res/DEBIAN/control')
-    os.rename('rustdesk.deb', '../rustdesk-%s.deb' % version)
+    os.rename(
+        'rustdesk.deb',
+        f'../rustdesk-{version}{get_package_suffix(rockchip_linux)}.deb'
+    )
     if ships_so:
         # Named apart from the stock package so installing the consent-free variant is a deliberate act.
-        os.rename('../rustdesk-%s.deb' % version, f'../{DRM_PACKAGE_NAME}-{version}.deb')
+        os.rename(
+            f'../rustdesk-{version}{get_package_suffix(rockchip_linux)}.deb',
+            f'../{DRM_PACKAGE_NAME}-{version}.deb'
+        )
     os.chdir("..")
 
 
@@ -816,7 +849,7 @@ def assert_staged_binary_is_drm():
             '--features ...,drm,drm-wake')
 
 
-def build_deb_from_folder(version, binary_folder, want_drm=False):
+def build_deb_from_folder(version, binary_folder, want_drm=False, rockchip_linux=False):
     os.chdir('flutter')
     system2('mkdir -p tmpdeb/usr/bin/')
     system2('mkdir -p tmpdeb/usr/share/rustdesk')
@@ -882,7 +915,7 @@ def build_deb_from_folder(version, binary_folder, want_drm=False):
             stage_libdrmtap_into_deb(build_libdrmtap_so())
 
     system2('mkdir -p tmpdeb/DEBIAN')
-    generate_control_file(version)
+    generate_control_file(version, rockchip_linux)
     # Keyed on the EXPLICIT request, not on what happened to be staged: by here a --drm build has
     # its library in tmpdeb whichever of the two shapes it came from.
     if want_drm:
@@ -893,9 +926,15 @@ def build_deb_from_folder(version, binary_folder, want_drm=False):
 
     system2('/bin/rm -rf tmpdeb/')
     system2('/bin/rm -rf ../res/DEBIAN/control')
-    os.rename('rustdesk.deb', '../rustdesk-%s.deb' % version)
+    os.rename(
+        'rustdesk.deb',
+        f'../rustdesk-{version}{get_package_suffix(rockchip_linux)}.deb'
+    )
     if want_drm:
-        os.rename('../rustdesk-%s.deb' % version, f'../{DRM_PACKAGE_NAME}-{version}.deb')
+        os.rename(
+            f'../rustdesk-{version}{get_package_suffix(rockchip_linux)}.deb',
+            f'../{DRM_PACKAGE_NAME}-{version}.deb'
+        )
     os.chdir("..")
 
 
@@ -970,6 +1009,17 @@ def main():
     parser = make_parser()
     args = parser.parse_args()
 
+    if args.rockchip_linux:
+        if windows or osx:
+            parser.error('--rockchip-linux is only supported on Linux')
+        if not (args.flutter or args.package):
+            parser.error('--rockchip-linux requires --flutter or --package')
+        custom_arch = os.environ.get('DEB_ARCH')
+        if custom_arch is not None and custom_arch != 'arm64':
+            parser.error('--rockchip-linux requires DEB_ARCH=arm64')
+        if args.drm:
+            parser.error('--rockchip-linux and --drm are separate package variants')
+
     # Before anything with a side effect: this is a query, and a caller uses it to build the very
     # binary it will then package. `get_features` stays the single definition of what a flag
     # combination means; a caller that hardcodes the list instead is one edit away from compiling
@@ -982,6 +1032,8 @@ def main():
             feats = ','.join(get_features(args))
         print(feats)
         return
+    configure_flutter_build_dir(args.rockchip_linux)
+    configure_rockchip_build(args.rockchip_linux)
 
     if os.path.exists(exe_path):
         os.unlink(exe_path)
@@ -998,7 +1050,7 @@ def main():
     portable = args.portable
     package = args.package
     if package:
-        build_deb_from_folder(version, package, args.drm)
+        build_deb_from_folder(version, package, args.drm, args.rockchip_linux)
         return
     res_dir = 'resources'
     external_resources(flutter, args, res_dir)
@@ -1072,7 +1124,7 @@ def main():
             else:
                 # system2(
                 #     'mv target/release/bundle/deb/rustdesk*.deb ./flutter/rustdesk.deb')
-                build_flutter_deb(version, features)
+                build_flutter_deb(version, features, args.rockchip_linux)
         else:
             system2('cargo --locked bundle --release --features ' + features)
             if osx:
