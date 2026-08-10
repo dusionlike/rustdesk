@@ -2134,6 +2134,10 @@ pub fn rustdesk_interval(i: Interval) -> ThrottledInterval {
 
 pub fn load_custom_client() {
     #[cfg(debug_assertions)]
+    if load_custom_client_json(std::path::Path::new("./custom.json")) {
+        return;
+    }
+    #[cfg(debug_assertions)]
     if let Ok(data) = std::fs::read_to_string("./custom.txt") {
         read_custom_client(data.trim());
         return;
@@ -2144,6 +2148,9 @@ pub fn load_custom_client() {
     };
     #[cfg(target_os = "macos")]
     let path = path.join("../Resources");
+    if load_custom_client_json(&path.join("custom.json")) {
+        return;
+    }
     let path = path.join("custom.txt");
     if path.is_file() {
         let Ok(data) = std::fs::read_to_string(&path) else {
@@ -2152,6 +2159,17 @@ pub fn load_custom_client() {
         };
         read_custom_client(&data.trim());
     }
+}
+
+fn load_custom_client_json(path: &std::path::Path) -> bool {
+    if !path.is_file() {
+        return false;
+    }
+    let Ok(data) = std::fs::read_to_string(path) else {
+        log::error!("Failed to read custom client JSON config");
+        return false;
+    };
+    read_custom_client_json(data.trim())
 }
 
 fn read_custom_client_advanced_settings(
@@ -2244,13 +2262,27 @@ pub fn read_custom_client(config: &str) {
         log::error!("Failed to dec custom client config");
         return;
     };
-    let Ok(mut data) =
+    let Ok(data) =
         serde_json::from_slice::<std::collections::HashMap<String, serde_json::Value>>(&data)
     else {
         log::error!("Failed to parse custom client config");
         return;
     };
+    apply_custom_client_config(data);
+}
 
+pub fn read_custom_client_json(config: &str) -> bool {
+    let Ok(data) =
+        serde_json::from_str::<std::collections::HashMap<String, serde_json::Value>>(config)
+    else {
+        log::error!("Failed to parse custom client JSON config");
+        return false;
+    };
+    apply_custom_client_config(data);
+    true
+}
+
+fn apply_custom_client_config(mut data: std::collections::HashMap<String, serde_json::Value>) {
     if let Some(app_name) = data.remove("app-name") {
         if let Some(app_name) = app_name.as_str() {
             *config::APP_NAME.write().unwrap() = app_name.to_owned();

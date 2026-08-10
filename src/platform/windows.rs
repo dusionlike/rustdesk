@@ -1956,14 +1956,14 @@ pub fn get_custom_client_staging_dir() -> PathBuf {
 /// Current behavior: intentionally a no-op (does not delete).
 ///
 /// Rationale
-/// - The staging directory only contains a small `custom.txt`, leaving it is harmless.
+/// - The staging directory only contains small custom client config files, leaving it is harmless.
 /// - Deleting directories under a public location (e.g., C:\\ProgramData\\RustDesk) is
 ///   susceptible to TOCTOU attacks if an unprivileged user can replace the path with a
 ///   symlink/junction between checks and deletion.
 ///
 /// Future work:
 /// - Use the files (if needed) in the installation directory instead of a public location.
-///   This directory only contains a small `custom.txt` file.
+///   This directory only contains small custom client config files.
 /// - Pass the custom client name directly via command line
 ///   or environment variable during update installation. Then no staging directory is needed.
 #[inline]
@@ -1972,7 +1972,7 @@ pub fn remove_custom_client_staging_dir(staging_dir: &Path) -> ResultType<bool> 
         return Ok(false);
     }
 
-    // First explicitly removes `custom.txt` to ensure stale config is never replayed,
+    // First explicitly removes config files to ensure stale config is never replayed,
     // even if the subsequent directory removal fails.
     //
     // `std::fs::remove_file` on a symlink removes the symlink itself, not the target,
@@ -1980,6 +1980,10 @@ pub fn remove_custom_client_staging_dir(staging_dir: &Path) -> ResultType<bool> 
     let custom_txt_path = staging_dir.join("custom.txt");
     if custom_txt_path.exists() {
         allow_err!(std::fs::remove_file(&custom_txt_path));
+    }
+    let custom_json_path = staging_dir.join("custom.json");
+    if custom_json_path.exists() {
+        allow_err!(std::fs::remove_file(&custom_json_path));
     }
 
     // Intentionally not deleting. See the function docs for rationale.
@@ -1990,10 +1994,10 @@ pub fn remove_custom_client_staging_dir(staging_dir: &Path) -> ResultType<bool> 
     Ok(false)
 }
 
-// Prepare custom client update by copying staged custom.txt to current directory and loading it.
+// Prepare custom client update by copying a staged config to current directory and loading it.
 // Returns:
 // 1. Ok(true) if preparation was successful or no staging directory exists.
-// 2. Ok(false) if custom.txt file exists but has invalid contents or fails security checks
+// 2. Ok(false) if a config exists but has invalid contents or fails security checks
 //    (e.g., is a symlink or has invalid contents).
 // 3. Err if any unexpected error occurs during file operations.
 pub fn prepare_custom_client_update() -> ResultType<bool> {
@@ -2025,31 +2029,39 @@ pub fn prepare_custom_client_update() -> ResultType<bool> {
     };
 
     if custom_client_staging_dir.exists() {
+        let custom_json_path = custom_client_staging_dir.join("custom.json");
         let custom_txt_path = custom_client_staging_dir.join("custom.txt");
-        if !custom_txt_path.exists() {
+        let custom_path = if custom_json_path.exists() {
+            custom_json_path
+        } else {
+            custom_txt_path
+        };
+        if !custom_path.exists() {
             return Ok(true);
         }
 
-        let metadata = std::fs::symlink_metadata(&custom_txt_path)?;
+        let metadata = std::fs::symlink_metadata(&custom_path)?;
         if metadata.is_symlink() {
             log::error!(
-                "custom.txt is a symlink. Refusing to load custom client for security reasons."
+                "Custom client config is a symlink. Refusing to load it for security reasons."
             );
             drop(clear_staging_on_exit);
             return Ok(false);
         }
         if metadata.is_file() {
-            // Copy custom.txt to current directory
-            let local_custom_file_path = current_exe_dir.join("custom.txt");
+            let Some(custom_file_name) = custom_path.file_name() else {
+                return Ok(false);
+            };
+            let local_custom_file_path = current_exe_dir.join(custom_file_name);
             log::debug!(
                 "Copying staged custom file from {:?} to {:?}",
-                custom_txt_path,
+                custom_path,
                 local_custom_file_path
             );
 
             // No need to check symlink before copying.
             // `load_custom_client()` will fail if the file is not valid.
-            fs::copy(&custom_txt_path, &local_custom_file_path)?;
+            fs::copy(&custom_path, &local_custom_file_path)?;
             log::info!("Staged custom client file copied to current directory.");
 
             // Load custom client
@@ -2057,13 +2069,12 @@ pub fn prepare_custom_client_update() -> ResultType<bool> {
                 local_custom_file_path.exists() && local_custom_file_path.is_file();
             crate::load_custom_client();
 
-            // Remove the copied custom.txt file
+            // Remove the copied config file
             allow_err!(fs::remove_file(&local_custom_file_path));
 
             // Check if loaded successfully
             if is_custom_file_exists && !crate::common::is_custom_client() {
-                // The custom.txt file existed, but its contents are invalid.
-                log::error!("Failed to load custom client from custom.txt.");
+                log::error!("Failed to load custom client from {:?}.", custom_file_name);
                 drop(clear_staging_on_exit);
                 // ERROR_INVALID_DATA
                 return Ok(false);
@@ -3612,14 +3623,19 @@ pub fn handle_custom_client_staging_dir_before_update(
         }
     }
 
-    let src_path = current_exe_dir.join("custom.txt");
+    let custom_json_path = current_exe_dir.join("custom.json");
+    let custom_txt_path = current_exe_dir.join("custom.txt");
+    let src_path = if custom_json_path.exists() {
+        custom_json_path
+    } else {
+        custom_txt_path
+    };
     if src_path.exists() {
-        // Verify that custom.txt is not a symlink before copying
         let metadata = match std::fs::symlink_metadata(&src_path) {
             Ok(m) => m,
             Err(e) => {
                 bail!(
-                    "Failed to read metadata for custom.txt at {:?}: {}",
+                    "Failed to read metadata for custom client config at {:?}: {}",
                     src_path,
                     e
                 );
@@ -3629,7 +3645,7 @@ pub fn handle_custom_client_staging_dir_before_update(
         if metadata.is_symlink() {
             allow_err!(remove_custom_client_staging_dir(&custom_client_staging_dir));
             bail!(
-                "custom.txt at {:?} is a symlink, refusing to stage for security reasons.",
+                "Custom client config at {:?} is a symlink, refusing to stage for security reasons.",
                 src_path
             );
         }
@@ -3640,11 +3656,14 @@ pub fn handle_custom_client_staging_dir_before_update(
                     bail!("Failed to create parent directory {:?} when staging custom client files: {}", custom_client_staging_dir, e);
                 }
             }
-            let dst_path = custom_client_staging_dir.join("custom.txt");
+            let Some(file_name) = src_path.file_name() else {
+                bail!("Failed to get custom client config file name");
+            };
+            let dst_path = custom_client_staging_dir.join(file_name);
             if let Err(e) = std::fs::copy(&src_path, &dst_path) {
                 allow_err!(remove_custom_client_staging_dir(&custom_client_staging_dir));
                 bail!(
-                    "Failed to copy custom txt from {:?} to {:?}: {}",
+                    "Failed to copy custom client config from {:?} to {:?}: {}",
                     src_path,
                     dst_path,
                     e
@@ -3652,12 +3671,12 @@ pub fn handle_custom_client_staging_dir_before_update(
             }
         } else {
             log::warn!(
-                "custom.txt at {:?} is not a regular file, skipping.",
+                "Custom client config at {:?} is not a regular file, skipping.",
                 src_path
             );
         }
     } else {
-        log::info!("No custom txt found to stage for update.");
+        log::info!("No custom client config found to stage for update.");
     }
 
     Ok(())
