@@ -92,6 +92,8 @@ fn setup(
     }
     write_meta(&dir, ts);
     #[cfg(windows)]
+    win::sync_custom_client_config(&dir);
+    #[cfg(windows)]
     win::copy_runtime_broker(&dir);
     #[cfg(linux)]
     reader.configure_permission(&dir);
@@ -236,6 +238,32 @@ mod win {
             .creation_flags(winapi::um::winbase::CREATE_NO_WINDOW)
             .output();
         let _allow_err = std::fs::copy(src, &format!("{}\\{}", dir.to_string_lossy(), tgt));
+    }
+
+    pub(super) fn sync_custom_client_config(dir: &Path) {
+        let Some(exe_dir) = std::env::current_exe()
+            .ok()
+            .and_then(|path| path.parent().map(Path::to_path_buf))
+        else {
+            eprintln!("Failed to get portable executable directory");
+            return;
+        };
+
+        for file_name in ["custom.json", "custom.txt"] {
+            let source = exe_dir.join(file_name);
+            if !source.is_file() {
+                continue;
+            }
+
+            let target = dir.join(file_name);
+            if let Err(e) = fs::copy(&source, &target) {
+                eprintln!(
+                    "Failed to copy portable custom client config from {:?} to {:?}: {}",
+                    source, target, e
+                );
+            }
+            break;
+        }
     }
 
     /// Check if the executable is a Quick Support version.
