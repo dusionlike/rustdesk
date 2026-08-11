@@ -121,7 +121,10 @@ impl Drop for SimpleCallOnReturn {
     }
 }
 
+pub const DEFAULT_APP_NAME: &str = "DuckDesk";
+
 pub fn global_init() -> bool {
+    *config::APP_NAME.write().unwrap() = DEFAULT_APP_NAME.to_owned();
     #[cfg(target_os = "linux")]
     {
         if !crate::platform::linux::is_x11() {

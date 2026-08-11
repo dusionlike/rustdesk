@@ -2476,11 +2476,12 @@ class _AboutState extends State<_About> {
       final buildDate = data['buildDate'].toString();
       final fingerprint = data['fingerprint'].toString();
       final myId = data['myId'].toString();
+      final appName = bind.mainGetAppNameSync();
       const linkStyle = TextStyle(decoration: TextDecoration.underline);
       final scrollController = ScrollController();
       return SingleChildScrollView(
         controller: scrollController,
-        child: _Card(title: translate('About RustDesk'), children: [
+        child: _Card(title: '${translate('About')} $appName', children: [
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -2500,7 +2501,34 @@ class _AboutState extends State<_About> {
               SelectionArea(
                   child: Text('${translate('ID')}: $myId')
                       .marginSymmetric(vertical: 4.0)),
+              SelectionArea(
+                  child: Text(
+                          '$appName is based on RustDesk, an open-source remote desktop project.')
+                      .marginSymmetric(vertical: 4.0)),
+              SelectionArea(
+                  child: const Text(
+                          'Licensed under the GNU Affero General Public License v3.0 (AGPL-3.0).')
+                      .marginSymmetric(vertical: 4.0)),
               InkWell(
+                onTap: () {
+                  launchUrlString('https://github.com/rustdesk/rustdesk');
+                },
+                child: const Text(
+                  'RustDesk upstream source',
+                  style: linkStyle,
+                ).marginSymmetric(vertical: 4.0),
+              ),
+              InkWell(
+                onTap: () {
+                  launchUrlString('https://github.com/dusionlike/rustdesk');
+                },
+                child: Text(
+                  '$appName source code',
+                  style: linkStyle,
+                ).marginSymmetric(vertical: 4.0),
+              ),
+              if (!bind.isCustomClient())
+                InkWell(
                   onTap: () {
                     launchUrlString('https://rustdesk.com/privacy.html');
                   },
@@ -2508,7 +2536,8 @@ class _AboutState extends State<_About> {
                     translate('Privacy Statement'),
                     style: linkStyle,
                   ).marginSymmetric(vertical: 4.0)),
-              InkWell(
+              if (!bind.isCustomClient())
+                InkWell(
                   onTap: () {
                     launchUrlString('https://rustdesk.com');
                   },

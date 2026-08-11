@@ -986,16 +986,17 @@ class _SettingsState extends State<SettingsPage> with WidgetsBindingObserver {
           title: Text(translate("About")),
           tiles: [
             SettingsTile(
-                onPressed: (context) async {
-                  await launchUrl(Uri.parse(url));
-                },
+                onPressed: bind.isCustomClient()
+                    ? null
+                    : (context) async {
+                        await launchUrl(Uri.parse(url));
+                      },
                 title: Text(translate("Version: ") + version),
                 value: Padding(
                   padding: EdgeInsets.symmetric(vertical: 8),
-                  child: Text('rustdesk.com',
-                      style: TextStyle(
-                        decoration: TextDecoration.underline,
-                      )),
+                  child: Text(bind.isCustomClient()
+                      ? bind.mainGetAppNameSync()
+                      : 'rustdesk.com'),
                 ),
                 leading: Icon(Icons.info)),
             SettingsTile(
@@ -1023,11 +1024,33 @@ class _SettingsState extends State<SettingsPage> with WidgetsBindingObserver {
                 ),
                 leading: Icon(Icons.perm_identity)),
             SettingsTile(
-              title: Text(translate("Privacy Statement")),
-              onPressed: (context) =>
-                  launchUrlString('https://rustdesk.com/privacy.html'),
-              leading: Icon(Icons.privacy_tip),
-            )
+              title: Text(
+                  '${bind.mainGetAppNameSync()} is based on RustDesk (AGPL-3.0)'),
+              value: const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: Text('github.com/rustdesk/rustdesk'),
+              ),
+              onPressed: (context) => launchUrlString(
+                  'https://github.com/rustdesk/rustdesk'),
+              leading: const Icon(Icons.code),
+            ),
+            SettingsTile(
+              title: Text('${bind.mainGetAppNameSync()} source code'),
+              value: const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: Text('github.com/dusionlike/rustdesk'),
+              ),
+              onPressed: (context) => launchUrlString(
+                  'https://github.com/dusionlike/rustdesk'),
+              leading: const Icon(Icons.source),
+            ),
+            if (!bind.isCustomClient())
+              SettingsTile(
+                title: Text(translate("Privacy Statement")),
+                onPressed: (context) =>
+                    launchUrlString('https://rustdesk.com/privacy.html'),
+                leading: Icon(Icons.privacy_tip),
+              )
           ],
         ),
       ],
@@ -1132,11 +1155,32 @@ void showThemeSettings(OverlayDialogManager dialogManager) async {
 
 void showAbout(OverlayDialogManager dialogManager) {
   dialogManager.show((setState, close, context) {
+    final appName = bind.mainGetAppNameSync();
     return CustomAlertDialog(
-      title: Text(translate('About RustDesk')),
+      title: Text('${translate('About')} $appName'),
       content: Wrap(direction: Axis.vertical, spacing: 12, children: [
         Text('Version: $version'),
+        Text('$appName is based on RustDesk.'),
+        const Text(
+            'Licensed under the GNU Affero General Public License v3.0 (AGPL-3.0).'),
         InkWell(
+          onTap: () => launchUrlString(
+              'https://github.com/rustdesk/rustdesk'),
+          child: const Text(
+            'RustDesk upstream source',
+            style: TextStyle(decoration: TextDecoration.underline),
+          ),
+        ),
+        InkWell(
+          onTap: () => launchUrlString(
+              'https://github.com/dusionlike/rustdesk'),
+          child: Text(
+            '$appName source code',
+            style: const TextStyle(decoration: TextDecoration.underline),
+          ),
+        ),
+        if (!bind.isCustomClient())
+          InkWell(
             onTap: () async {
               const url = 'https://rustdesk.com/';
               await launchUrl(Uri.parse(url));
