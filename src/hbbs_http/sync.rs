@@ -18,7 +18,6 @@ use serde_json::{json, Value};
 const TIME_HEARTBEAT: Duration = Duration::from_secs(15);
 const UPLOAD_SYSINFO_TIMEOUT: Duration = Duration::from_secs(120);
 const TIME_CONN: Duration = Duration::from_secs(3);
-const ADDRESS_BOOK_ALIAS_RETRY_INTERVAL: Duration = Duration::from_secs(60);
 const ADDRESS_BOOK_ALIAS_LICENSE_PATH_KEYS: &[&str] = &[
     "address-book-alias-license-path",
     "address_book_alias_license_path",
@@ -94,10 +93,8 @@ impl InfoUploaded {
 }
 
 #[derive(Default)]
-struct AddressBookAliasInit {
-    key: String,
-    terminal: bool,
-    next_attempt: Option<Instant>,
+struct AddressBookAliasSync {
+    pending_alias: Option<String>,
 }
 
 fn address_book_alias_license_path() -> String {
@@ -179,94 +176,37 @@ async fn read_address_book_alias_license(configured_path: &str) -> Option<(PathB
     Some((path, alias))
 }
 
-async fn init_address_book_alias(heartbeat_url: &str, id: &str, state: &mut AddressBookAliasInit) {
+fn take_heartbeat_alias(response: &mut HashMap<&str, Value>) -> Option<String> {
+    response
+        .remove("alias")
+        .and_then(|alias| alias.as_str().map(str::to_owned))
+}
+
+async fn update_address_book_alias(
+    response: &mut HashMap<&str, Value>,
+    state: &mut AddressBookAliasSync,
+    info_uploaded: &mut InfoUploaded,
+) {
+    let Some(alias) = take_heartbeat_alias(response) else {
+        state.pending_alias = None;
+        return;
+    };
+    if !alias.trim().is_empty() {
+        state.pending_alias = None;
+        return;
+    }
+
     let configured_path = address_book_alias_license_path();
-    if configured_path.is_empty()
-        || !Config::get_option(keys::OPTION_PRESET_ADDRESS_BOOK_ALIAS)
-            .trim()
-            .is_empty()
-    {
-        state.key.clear();
-        state.terminal = false;
-        state.next_attempt = None;
+    if configured_path.is_empty() {
+        state.pending_alias = None;
         return;
     }
-
-    let Some((license_path, alias)) = read_address_book_alias_license(&configured_path).await
-    else {
-        if state.key != configured_path {
-            state.key = configured_path;
-            state.terminal = false;
-            state.next_attempt = Some(Instant::now() + ADDRESS_BOOK_ALIAS_RETRY_INTERVAL);
-        }
+    let Some((_, alias)) = read_address_book_alias_license(&configured_path).await else {
+        state.pending_alias = None;
         return;
     };
-    let uuid = crate::encode64(hbb_common::get_uuid());
-    let state_key = format!(
-        "{}\0{}\0{}\0{}\0{}",
-        heartbeat_url, id, uuid, alias, configured_path
-    );
-    if state.key != state_key {
-        state.key = state_key;
-        state.terminal = false;
-        state.next_attempt = None;
-    }
-    if state.terminal
-        || state
-            .next_attempt
-            .map(|next| Instant::now() < next)
-            .unwrap_or(false)
-    {
-        return;
-    }
-
-    let Some(api_base) = heartbeat_url.strip_suffix("/api/heartbeat") else {
-        log::warn!("Unable to derive API base URL from heartbeat URL");
-        state.terminal = true;
-        return;
-    };
-    let body = json!({
-        "id": id,
-        "uuid": uuid,
-        "alias": alias,
-    })
-    .to_string();
-    let url = format!("{api_base}/api/ab/alias/init");
-    match crate::post_request_with_status(url, body, "").await {
-        Ok((200, _)) => {
-            state.terminal = true;
-            log::info!(
-                "Initialized address-book alias from license file {:?}",
-                license_path
-            );
-        }
-        Ok((401, response)) => {
-            state.terminal = true;
-            log::warn!("Address-book alias initialization rejected: HTTP 401: {response}");
-        }
-        Ok((409, response)) => {
-            state.terminal = true;
-            log::debug!(
-                "Address-book alias initialization skipped because the alias is already set: {}",
-                response
-            );
-        }
-        Ok((404, response)) => {
-            state.terminal = true;
-            log::debug!(
-                "Device is not registered; stopping address-book alias initialization: {}",
-                response
-            );
-        }
-        Ok((status, response)) => {
-            state.terminal = true;
-            log::warn!("Address-book alias initialization failed with HTTP {status}: {response}");
-        }
-        Err(err) => {
-            state.next_attempt = Some(Instant::now() + ADDRESS_BOOK_ALIAS_RETRY_INTERVAL);
-            log::debug!("Address-book alias initialization request failed: {err}");
-        }
-    }
+    state.pending_alias = Some(alias);
+    info_uploaded.uploaded = false;
 }
 
 #[cfg(not(any(target_os = "ios")))]
@@ -279,7 +219,7 @@ async fn start_hbbs_sync_async() {
     let mut last_sent: Option<Instant> = None;
     let mut info_uploaded = InfoUploaded::default();
     let mut sysinfo_ver = "".to_owned();
-    let mut address_book_alias_init = AddressBookAliasInit::default();
+    let mut address_book_alias = AddressBookAliasSync::default();
     loop {
         tokio::select! {
             _ = interval.tick() => {
@@ -364,6 +304,9 @@ async fn start_hbbs_sync_async() {
                     let note = Config::get_option(keys::OPTION_PRESET_NOTE);
                     if !note.is_empty() {
                         v[keys::OPTION_PRESET_NOTE] = json!(note);
+                    }
+                    if let Some(alias) = &address_book_alias.pending_alias {
+                        v["alias"] = json!(alias);
                     }
                     let v = v.to_string();
                     let mut hash = "".to_owned();
@@ -455,8 +398,13 @@ async fn start_hbbs_sync_async() {
                                 handle_config_options(strategy.config_options);
                             }
                         }
+                        update_address_book_alias(
+                            &mut rsp,
+                            &mut address_book_alias,
+                            &mut info_uploaded,
+                        )
+                        .await;
                     }
-                    init_address_book_alias(&url, &id, &mut address_book_alias_init).await;
                 }
             }
         }
@@ -633,7 +581,9 @@ mod tests {
 
 #[cfg(test)]
 mod address_book_alias_tests {
-    use super::parse_address_book_alias_license;
+    use super::{parse_address_book_alias_license, take_heartbeat_alias};
+    use serde_json::json;
+    use std::collections::HashMap;
 
     #[test]
     fn parses_alias_from_license_marker() {
@@ -647,5 +597,20 @@ mod address_book_alias_tests {
     fn rejects_empty_or_unmatched_alias_marker() {
         assert_eq!(parse_address_book_alias_license("header\n##\n"), None);
         assert_eq!(parse_address_book_alias_license("header\n#zzx\n"), None);
+    }
+
+    #[test]
+    fn handles_optional_heartbeat_alias() {
+        let mut response = HashMap::from([("alias", json!("front-desk"))]);
+        assert_eq!(
+            take_heartbeat_alias(&mut response),
+            Some("front-desk".to_owned())
+        );
+
+        let mut response = HashMap::from([("alias", json!(""))]);
+        assert_eq!(take_heartbeat_alias(&mut response), Some(String::new()));
+
+        let mut response = HashMap::new();
+        assert_eq!(take_heartbeat_alias(&mut response), None);
     }
 }
