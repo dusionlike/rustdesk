@@ -232,7 +232,6 @@ async fn init_address_book_alias(heartbeat_url: &str, id: &str, state: &mut Addr
     })
     .to_string();
     let url = format!("{api_base}/api/ab/alias/init");
-    state.next_attempt = Some(Instant::now() + ADDRESS_BOOK_ALIAS_RETRY_INTERVAL);
     match crate::post_request_with_status(url, body, "").await {
         Ok((200, _)) => {
             state.terminal = true;
@@ -253,15 +252,18 @@ async fn init_address_book_alias(heartbeat_url: &str, id: &str, state: &mut Addr
             );
         }
         Ok((404, response)) => {
+            state.terminal = true;
             log::debug!(
-                "Device is not registered yet; retrying address-book alias initialization: {}",
+                "Device is not registered; stopping address-book alias initialization: {}",
                 response
             );
         }
         Ok((status, response)) => {
+            state.terminal = true;
             log::warn!("Address-book alias initialization failed with HTTP {status}: {response}");
         }
         Err(err) => {
+            state.next_attempt = Some(Instant::now() + ADDRESS_BOOK_ALIAS_RETRY_INTERVAL);
             log::debug!("Address-book alias initialization request failed: {err}");
         }
     }
