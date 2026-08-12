@@ -53,6 +53,7 @@ var svg_menu = <svg #menu viewBox="0 0 512 512">
 var svg_refresh_password = <svg #refresh-password xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 2v6h6M2.66 15.57a10 10 0 1 0 .57-8.38"/></svg>;
 
 var my_id = handler.get_id();
+var heartbeat_alias = handler.get_option("heartbeat-alias");
 function get_id() {
   my_id = handler.get_id();
   return my_id;
@@ -721,6 +722,10 @@ class App: Reactor.Component
                         </div>
                         <div .lighter-text>{outgoing_only ? translate('outgoing_only_desk_tip') : translate('desk_tip')}</div>
                         {outgoing_only ? <div style="position:absolute; left:-10000px; top:-10000px; width:0; height:0; overflow:hidden"><MyIdMenu /></div> : ""}
+                        {!outgoing_only && heartbeat_alias ? <div .your-desktop>
+                            <div>{translate('Alias')}</div>
+                            <input type="text" readonly value={heartbeat_alias}/>
+                        </div> : ""}
                         {!outgoing_only && <div .your-desktop>
                             <MyIdMenu />
                             {key_confirmed ? <input type="text" readonly value={formatId(get_id())}/> : translate("Generating ...")}
@@ -1439,6 +1444,11 @@ function checkConnectStatus() {
         }
         if (tmp[2] && tmp[2] != my_id) {
             stdout.println("id updated");
+            app.update();
+        }
+        tmp = handler.get_option("heartbeat-alias");
+        if (heartbeat_alias != tmp) {
+            heartbeat_alias = tmp;
             app.update();
         }
         tmp = handler.get_error();
