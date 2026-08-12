@@ -18,6 +18,7 @@ use serde_json::{json, Value};
 const TIME_HEARTBEAT: Duration = Duration::from_secs(15);
 const UPLOAD_SYSINFO_TIMEOUT: Duration = Duration::from_secs(120);
 const TIME_CONN: Duration = Duration::from_secs(3);
+pub const HEARTBEAT_ALIAS_OPTION: &str = "heartbeat-alias";
 const ADDRESS_BOOK_ALIAS_LICENSE_PATH_KEYS: &[&str] = &[
     "address-book-alias-license-path",
     "address_book_alias_license_path",
@@ -188,9 +189,11 @@ async fn update_address_book_alias(
     info_uploaded: &mut InfoUploaded,
 ) {
     let Some(alias) = take_heartbeat_alias(response) else {
+        Config::set_option(HEARTBEAT_ALIAS_OPTION.to_owned(), String::new());
         state.pending_alias = None;
         return;
     };
+    Config::set_option(HEARTBEAT_ALIAS_OPTION.to_owned(), alias.clone());
     if !alias.trim().is_empty() {
         state.pending_alias = None;
         return;

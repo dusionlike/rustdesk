@@ -41,6 +41,7 @@ class ServerModel with ChangeNotifier {
 
   late String _emptyIdShow;
   late final IDTextEditingController _serverId;
+  final _heartbeatAlias = TextEditingController();
   final _serverPasswd =
       TextEditingController(text: translate("Generating ..."));
 
@@ -121,6 +122,8 @@ class ServerModel with ChangeNotifier {
   }
 
   TextEditingController get serverId => _serverId;
+
+  TextEditingController get heartbeatAlias => _heartbeatAlias;
 
   TextEditingController get serverPasswd => _serverPasswd;
 
@@ -230,6 +233,7 @@ class ServerModel with ChangeNotifier {
   updatePasswordModel() async {
     var update = false;
     final temporaryPassword = await bind.mainGetTemporaryPassword();
+    final heartbeatAlias = await bind.mainGetOption(key: kOptionHeartbeatAlias);
     final verificationMethod =
         await bind.mainGetOption(key: kOptionVerificationMethod);
     final temporaryPasswordLength =
@@ -262,6 +266,10 @@ class ServerModel with ChangeNotifier {
       }
     }
     if (oldPwdText != _serverPasswd.text) {
+      update = true;
+    }
+    if (_heartbeatAlias.text != heartbeatAlias) {
+      _heartbeatAlias.text = heartbeatAlias;
       update = true;
     }
     if (_verificationMethod != verificationMethod) {
