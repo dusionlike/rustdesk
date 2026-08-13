@@ -136,6 +136,8 @@ class ServerModel with ChangeNotifier {
   ServerModel(this.parent) {
     _emptyIdShow = translate("Generating ...");
     _serverId = IDTextEditingController(text: _emptyIdShow);
+    _heartbeatAlias.text =
+        bind.mainGetOptionSync(key: kOptionHeartbeatAlias);
 
     /*
     // initital _hideCm at startup
