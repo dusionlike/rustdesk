@@ -965,6 +965,9 @@ async fn handle(data: Data, stream: &mut Connection) {
                     } else {
                         updated = Config::set_permanent_password(&value);
                     }
+                    if updated {
+                        crate::hbbs_http::sync::update_address_book_password(&value);
+                    }
                     // Explicitly ACK/NACK permanent-password writes. This allows UIs/FFI to
                     // distinguish "accepted by daemon" vs "IPC send succeeded" without
                     // reading back any secret.

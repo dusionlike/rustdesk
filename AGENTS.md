@@ -21,6 +21,10 @@
 - **Audio/Video Services**: Real-time audio/video streaming in `src/server/`
 - **File Transfer**: Secure file transfer implementation in `libs/hbb_common/`
 
+### Submodule boundaries
+
+* `libs/hbb_common/` is externally managed and read-only. Never modify, commit, push, or update its gitlink unless the user explicitly authorizes that exact submodule change.
+
 ### UI Architecture
 - **Legacy UI**: Sciter-based (deprecated) - files in `src/ui/`
 - **Modern UI**: Flutter-based - files in `flutter/`

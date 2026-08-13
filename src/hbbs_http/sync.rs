@@ -18,6 +18,8 @@ use serde_json::{json, Value};
 const TIME_HEARTBEAT: Duration = Duration::from_secs(15);
 const UPLOAD_SYSINFO_TIMEOUT: Duration = Duration::from_secs(120);
 const TIME_CONN: Duration = Duration::from_secs(3);
+const AUTO_ADDRESS_BOOK_PASSWORD_OPTION: &str = "auto-address-book-password";
+const AUTO_ADDRESS_BOOK_PASSWORD_LENGTH: usize = 16;
 pub const HEARTBEAT_ALIAS_OPTION: &str = "heartbeat-alias";
 const ADDRESS_BOOK_ALIAS_LICENSE_PATH_KEYS: &[&str] = &[
     "address-book-alias-license-path",
@@ -67,6 +69,7 @@ struct InfoUploaded {
     last_uploaded: Option<Instant>,
     id: String,
     username: Option<String>,
+    address_book_password: String,
 }
 
 impl Default for InfoUploaded {
@@ -77,19 +80,56 @@ impl Default for InfoUploaded {
             last_uploaded: None,
             id: "".to_owned(),
             username: None,
+            address_book_password: "".to_owned(),
         }
     }
 }
 
 impl InfoUploaded {
-    fn uploaded(url: String, id: String, username: String) -> Self {
+    fn uploaded(url: String, id: String, username: String, address_book_password: String) -> Self {
         Self {
             uploaded: true,
             url,
             last_uploaded: None,
             id,
             username: Some(username),
+            address_book_password,
         }
+    }
+}
+
+fn address_book_password() -> String {
+    let password = Config::get_option(keys::OPTION_PRESET_ADDRESS_BOOK_PASSWORD);
+    if !password.eq_ignore_ascii_case("auto") {
+        return password;
+    }
+    let password = LocalConfig::get_option(AUTO_ADDRESS_BOOK_PASSWORD_OPTION);
+    if !password.is_empty() {
+        return password;
+    }
+    let password = Config::get_auto_password(AUTO_ADDRESS_BOOK_PASSWORD_LENGTH);
+    if !Config::set_permanent_password(&password) {
+        log::warn!("Failed to set the automatic address book password");
+        return String::new();
+    }
+    LocalConfig::set_option(
+        AUTO_ADDRESS_BOOK_PASSWORD_OPTION.to_owned(),
+        password.clone(),
+    );
+    password
+}
+
+pub fn update_address_book_password(password: &str) {
+    if Config::get_option(keys::OPTION_PRESET_ADDRESS_BOOK_PASSWORD).eq_ignore_ascii_case("auto") {
+        LocalConfig::set_option(
+            AUTO_ADDRESS_BOOK_PASSWORD_OPTION.to_owned(),
+            password.to_owned(),
+        );
+    } else {
+        Config::set_option(
+            keys::OPTION_PRESET_ADDRESS_BOOK_PASSWORD.to_owned(),
+            password.to_owned(),
+        );
     }
 }
 
@@ -262,9 +302,11 @@ async fn start_hbbs_sync_async() {
                 // we may not be able to get the username before login after the next restart.
                 let mut v = crate::get_sysinfo();
                 let sys_username = v["username"].as_str().unwrap_or_default().to_string();
+                let address_book_password = address_book_password();
                 // Though the username comparison is only necessary on Windows,
                 // we still keep the comparison on other platforms for consistency.
-                let need_upload = (!info_uploaded.uploaded || info_uploaded.username.as_ref() != Some(&sys_username)) &&
+                let need_upload = (!info_uploaded.uploaded || info_uploaded.username.as_ref() != Some(&sys_username) ||
+                    info_uploaded.address_book_password != address_book_password) &&
                     info_uploaded.last_uploaded.map(|x| x.elapsed() >= UPLOAD_SYSINFO_TIMEOUT).unwrap_or(true);
                 if need_upload {
                     v["version"] = json!(crate::VERSION);
@@ -282,9 +324,8 @@ async fn start_hbbs_sync_async() {
                     if !ab_alias.is_empty() {
                         v[keys::OPTION_PRESET_ADDRESS_BOOK_ALIAS] = json!(ab_alias);
                     }
-                    let ab_password = Config::get_option(keys::OPTION_PRESET_ADDRESS_BOOK_PASSWORD);
-                    if !ab_password.is_empty() {
-                        v[keys::OPTION_PRESET_ADDRESS_BOOK_PASSWORD] = json!(ab_password);
+                    if !address_book_password.is_empty() {
+                        v[keys::OPTION_PRESET_ADDRESS_BOOK_PASSWORD] = json!(&address_book_password);
                     }
                     let ab_note = Config::get_option(keys::OPTION_PRESET_ADDRESS_BOOK_NOTE);
                     if !ab_note.is_empty() {
@@ -342,7 +383,12 @@ async fn start_hbbs_sync_async() {
                                 }
                             };
                             if samever {
-                                info_uploaded = InfoUploaded::uploaded(url.clone(), id.clone(), sys_username);
+                                info_uploaded = InfoUploaded::uploaded(
+                                    url.clone(),
+                                    id.clone(),
+                                    sys_username,
+                                    address_book_password,
+                                );
                                 log::info!("sysinfo not changed, skip upload");
                                 continue;
                             }
@@ -351,7 +397,12 @@ async fn start_hbbs_sync_async() {
                     match crate::post_request(url.replace("heartbeat", "sysinfo"), v, "").await {
                         Ok(x)  => {
                             if x == "SYSINFO_UPDATED" {
-                                info_uploaded = InfoUploaded::uploaded(url.clone(), id.clone(), sys_username);
+                                info_uploaded = InfoUploaded::uploaded(
+                                    url.clone(),
+                                    id.clone(),
+                                    sys_username,
+                                    address_book_password,
+                                );
                                 log::info!("sysinfo updated");
                                 if !hash.is_empty() {
                                     config::Status::set("sysinfo_hash", hash);
