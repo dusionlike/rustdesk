@@ -874,7 +874,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8dd9e63c1744f755c2f60332b88de39d341e5e86239014ad839bd71c106dec42"
 dependencies = [
  "block-sys",
- "objc2-encode 2.0.0-pre.2",
+ "objc2-encode 2.0.1-pre.2",
 ]
 
 [[package]]
@@ -1611,7 +1611,7 @@ name = "core-foundation-sys"
 version = "0.8.6"
 source = "git+https://github.com/madsmtm/core-foundation-rs.git?rev=7d593d016175755e492a92ef89edca68ac3bd5cd#7d593d016175755e492a92ef89edca68ac3bd5cd"
 dependencies = [
- "objc2-encode 2.0.0-pre.2",
+ "objc2-encode 2.0.1-pre.2",
 ]
 
 [[package]]
@@ -1655,7 +1655,7 @@ dependencies = [
  "core-graphics-types 0.1.2",
  "foreign-types 0.5.0",
  "libc",
- "objc2-encode 2.0.0-pre.2",
+ "objc2-encode 2.0.1-pre.2",
 ]
 
 [[package]]
@@ -1679,7 +1679,7 @@ dependencies = [
  "bitflags 1.3.2",
  "core-foundation 0.9.3",
  "libc",
- "objc2-encode 2.0.0-pre.2",
+ "objc2-encode 2.0.1-pre.2",
 ]
 
 [[package]]
@@ -2217,7 +2217,7 @@ dependencies = [
 
 [[package]]
 name = "directories-next"
-version = "2.0.0"
+version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "339ee130d97a610ea5a5872d2bbb130fdf68884ff09d3028b81bec8a1ac23bbc"
 dependencies = [
@@ -2264,7 +2264,7 @@ dependencies = [
 
 [[package]]
 name = "dirs-next"
-version = "2.0.0"
+version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b98cf8ebf19c3d1b223e151f99a4f9f0690dca41414773390fc824184ac833e1"
 dependencies = [
@@ -3068,7 +3068,7 @@ checksum = "a06f77d526c1a601b7c4cdd98f54b5eaabffc14d5f2f0296febdc7f357c6d3ba"
 
 [[package]]
 name = "funty"
-version = "2.0.0"
+version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6d5a32815ae3f33302d95fdcb2ce17862f8c65363dcfd29360480ba1001fc9c"
 
@@ -5444,7 +5444,7 @@ checksum = "a49f420f16c8814efdcd6b4258664de9d9920cbc26b6f95d034a1ca9850ccc2c"
 dependencies = [
  "block2 0.2.0-alpha.6",
  "objc-sys 0.2.0-beta.2",
- "objc2-encode 2.0.0-pre.2",
+ "objc2-encode 2.0.1-pre.2",
 ]
 
 [[package]]
@@ -5577,7 +5577,7 @@ dependencies = [
 
 [[package]]
 name = "objc2-encode"
-version = "2.0.0-pre.2"
+version = "2.0.1-pre.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "abfcac41015b00a120608fdaa6938c44cb983fee294351cc4bac7638b4e50512"
 dependencies = [
@@ -7259,7 +7259,7 @@ dependencies = [
 
 [[package]]
 name = "rustdesk"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "android-wakelock",
  "android_logger",
@@ -7371,7 +7371,7 @@ dependencies = [
 
 [[package]]
 name = "rustdesk-portable-packer"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "brotli",
  "dirs 5.0.1",
