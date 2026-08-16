@@ -550,7 +550,7 @@ pub fn core_main() -> Option<Vec<String>> {
                 if pos < max {
                     let token = args[pos + 1].to_owned();
                     let id = crate::ipc::get_id();
-                    let uuid = crate::encode64(hbb_common::get_uuid());
+                    let uuid = crate::encode64(crate::common::get_client_uuid());
                     let get_value = |c: &str| {
                         let pos = args.iter().position(|x| x == c).unwrap_or(max);
                         if pos < max {

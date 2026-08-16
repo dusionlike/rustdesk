@@ -834,7 +834,7 @@ pub fn remove_discovered(id: String) {
 
 #[inline]
 pub fn get_uuid() -> String {
-    crate::encode64(hbb_common::get_uuid())
+    crate::encode64(crate::common::get_client_uuid())
 }
 
 #[inline]
@@ -1095,7 +1095,7 @@ pub fn deploy_device(token: String, new_id: Option<String>) -> DeployResult {
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     let local_id = ipc::get_id();
     let id_to_deploy = new_id.clone().unwrap_or_else(|| local_id.clone());
-    let uuid = crate::encode64(hbb_common::get_uuid());
+    let uuid = crate::encode64(crate::common::get_client_uuid());
     let pk = crate::encode64(Config::get_key_pair().1);
     let body = serde_json::json!({
         "id": id_to_deploy,

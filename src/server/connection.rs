@@ -1503,7 +1503,7 @@ impl Connection {
         let url = self.server_audit_conn.clone();
         let mut v = v;
         v["id"] = json!(Config::get_id());
-        v["uuid"] = json!(crate::encode64(hbb_common::get_uuid()));
+        v["uuid"] = json!(crate::encode64(crate::common::get_client_uuid()));
         v["conn_id"] = json!(self.inner.id);
         v["session_id"] = json!(self.lr.session_id);
         // Unique per record; the api server dedups retried posts by it.
@@ -1550,7 +1550,7 @@ impl Connection {
         info["files"] = json!(files);
         let v = json!({
             "id":json!(Config::get_id()),
-            "uuid":json!(crate::encode64(hbb_common::get_uuid())),
+            "uuid":json!(crate::encode64(crate::common::get_client_uuid())),
             "peer_id":json!(self.lr.my_id),
             "conn_id":json!(self.inner.id()),
             "type": r#type as i8,
@@ -1575,7 +1575,7 @@ impl Connection {
         }
         let mut v = Value::default();
         v["id"] = json!(Config::get_id());
-        v["uuid"] = json!(crate::encode64(hbb_common::get_uuid()));
+        v["uuid"] = json!(crate::encode64(crate::common::get_client_uuid()));
         v["typ"] = json!(typ as i8);
         v["info"] = serde_json::Value::String(info.to_string());
         v["conn_id"] = json!(self.inner.id());

@@ -2356,6 +2356,35 @@ pub fn get_hwid() -> Bytes {
     Bytes::from(hasher.finalize().to_vec())
 }
 
+pub fn get_client_uuid() -> Vec<u8> {
+    static CACHED_CLIENT_UUID: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
+
+    CACHED_CLIENT_UUID
+        .get_or_init(|| {
+            let uuid = hbb_common::get_uuid();
+
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
+            {
+                use hbb_common::sha2::{Digest, Sha256};
+
+                match hbb_common::mac_address::get_mac_address() {
+                    Ok(Some(mac)) => {
+                        let mut hasher = Sha256::new();
+                        hasher.update(b"rustdesk-client-uuid-v2");
+                        hasher.update(&uuid);
+                        hasher.update(mac.bytes());
+                        return hasher.finalize().to_vec();
+                    }
+                    Ok(None) => log::warn!("No MAC address found for client UUID"),
+                    Err(err) => log::warn!("Failed to get MAC address for client UUID: {err}"),
+                }
+            }
+
+            uuid
+        })
+        .clone()
+}
+
 #[inline]
 pub fn get_builtin_option(key: &str) -> String {
     config::BUILTIN_SETTINGS
