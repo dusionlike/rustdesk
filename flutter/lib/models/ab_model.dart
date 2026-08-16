@@ -186,9 +186,12 @@ class AbModel {
           trySetCurrentToLast();
         }
         if (!addressbooks.containsKey(_currentName.value)) {
-          setCurrentName(legacyMode.value
+          final defaultName = legacyMode.value
               ? _legacyAddressBookName
-              : _personalAddressBookName);
+              : addressbooks.keys.firstWhere((name) =>
+                  name != _personalAddressBookName,
+                  orElse: () => _personalAddressBookName);
+          setCurrentName(defaultName);
         }
         // pull current address book
         await current.pullAb(quiet: quiet);
