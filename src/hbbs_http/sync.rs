@@ -99,6 +99,9 @@ impl InfoUploaded {
 }
 
 fn address_book_password() -> String {
+    if !config::is_incoming_only() {
+        return String::new();
+    }
     let password = Config::get_option(keys::OPTION_PRESET_ADDRESS_BOOK_PASSWORD);
     if !password.eq_ignore_ascii_case("auto") {
         return password;
@@ -120,6 +123,9 @@ fn address_book_password() -> String {
 }
 
 pub fn update_address_book_password(password: &str) {
+    if !config::is_incoming_only() {
+        return;
+    }
     if Config::get_option(keys::OPTION_PRESET_ADDRESS_BOOK_PASSWORD).eq_ignore_ascii_case("auto") {
         LocalConfig::set_option(
             AUTO_ADDRESS_BOOK_PASSWORD_OPTION.to_owned(),
