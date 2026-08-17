@@ -753,6 +753,10 @@ Future<void> windowOnTop(int? id) async {
   }
 }
 
+bool shouldSuppressWindowFocusOnConnect() {
+  return bind.mainGetOptionSync(key: kOptionDisableWindowFocusOnConnect) == 'Y';
+}
+
 typedef DialogBuilder = CustomAlertDialog Function(
     StateSetter setState, void Function([dynamic]) close, BuildContext context);
 

@@ -407,7 +407,9 @@ class _ViewCameraTabPageState extends State<ViewCameraTabPage> {
         await setNewConnectWindowFrame(windowId(), id!, prePeerCount,
             WindowType.ViewCamera, display, screenRect);
         Future.delayed(Duration(milliseconds: isWindows ? 100 : 0), () async {
-          await windowOnTop(windowId());
+          if (!shouldSuppressWindowFocusOnConnect()) {
+            await windowOnTop(windowId());
+          }
         });
       });
       ConnectionTypeState.init(id);
@@ -448,7 +450,7 @@ class _ViewCameraTabPageState extends State<ViewCameraTabPage> {
       reloadCurrentWindow();
     } else if (call.method == kWindowEventActiveSession) {
       final jumpOk = tabController.jumpToByKey(call.arguments);
-      if (jumpOk) {
+      if (jumpOk && !shouldSuppressWindowFocusOnConnect()) {
         windowOnTop(windowId());
       }
       return jumpOk;
@@ -458,7 +460,7 @@ class _ViewCameraTabPageState extends State<ViewCameraTabPage> {
       final display = args['display'];
       final jumpOk =
           tabController.jumpToByKeyAndDisplay(id, display, isCamera: true);
-      if (jumpOk) {
+      if (jumpOk && !shouldSuppressWindowFocusOnConnect()) {
         windowOnTop(windowId());
       }
       return jumpOk;
