@@ -1700,14 +1700,10 @@ jobs:
             export DEB_ARCH=${{ matrix.job.deb_arch }}
             python3 ./build.py --flutter --skip-cargo ${{ matrix.job.build_args }}
             if [[ -z "${{ matrix.job.build_args }}" ]]; then
-              for name in rustdesk*??.deb; do
+              for name in duckdesk*??.deb; do
                 mv "$name" "${name%%.deb}-${{ matrix.job.arch }}.deb"
               done
             fi
-            for name in rustdesk*.deb; do
-              mv "$name" "duckdesk${name#rustdesk}"
-            done
-
       - name: Publish debian package
         if: env.UPLOAD_ARTIFACT == 'true'
         uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v1
@@ -1726,7 +1722,7 @@ jobs:
 
   # Same build as build-rustdesk-linux x86_64 -- same vcpkg/ffmpeg, same ubuntu18.04 container, same
   # rust and flutter -- only with the drm feature on, so it ships as the separate
-  # rustdesk-unattended-wayland deb. libdrmtap is built on the runner because bionic's meson is too
+  # duckdesk-unattended-wayland deb. libdrmtap is built on the runner because bionic's meson is too
   # old for it. A separate job rather than a matrix entry of build-rustdesk-linux: appimage and
   # flatpak need that job, and a failure here must not skip them.
   build-rustdesk-linux-drm:
@@ -1941,7 +1937,7 @@ jobs:
             export CARGO_INCREMENTAL=0
             export DEB_ARCH=amd64
             python3 ./build.py --flutter --drm --hwcodec --unix-file-copy-paste --skip-cargo
-            for name in rustdesk*??.deb; do
+            for name in duckdesk*??.deb; do
               mv "$name" "${name%%.deb}-x86_64.deb"
             done
 
@@ -1954,9 +1950,9 @@ jobs:
           # Resolve by glob, not from env.VERSION: build.py names the deb from Cargo.toml, so a
           # hardcoded name fails with a bare exit 1 the first time those two drift.
           shopt -s nullglob
-          debs=(rustdesk-unattended-wayland-*-x86_64.deb)
+          debs=(duckdesk-unattended-wayland-*-x86_64.deb)
           if [ "${#debs[@]}" -ne 1 ]; then
-            echo "::error::expected one rustdesk-unattended-wayland-*-x86_64.deb, found ${#debs[@]}: ${debs[*]-none}"
+            echo "::error::expected one duckdesk-unattended-wayland-*-x86_64.deb, found ${#debs[@]}: ${debs[*]-none}"
             exit 1
           fi
           deb="${debs[0]}"
@@ -1975,13 +1971,6 @@ jobs:
             echo "::error::$deb was not built with the drm feature"
             exit 1
           fi
-        shell: bash
-
-      - name: Rename drm package
-        run: |
-          branded_deb="${DRM_DEB/rustdesk-unattended-wayland/duckdesk-unattended-wayland}"
-          mv "$DRM_DEB" "$branded_deb"
-          echo "DRM_DEB=$branded_deb" >> "$GITHUB_ENV"
         shell: bash
 
       - name: Publish debian package
@@ -2208,7 +2197,7 @@ jobs:
       - name: Rename package
         shell: bash
         run: |
-          for name in rustdesk*??.deb; do
+          for name in duckdesk*??.deb; do
               # use cp to duplicate deb files to fit other packages.
               cp "$name" "duckdesk-${{ env.VERSION }}-${{ matrix.job.arch }}-sciter.deb"
           done

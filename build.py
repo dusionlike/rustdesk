@@ -25,6 +25,8 @@ osx = platform.platform().startswith(
     'Darwin') or platform.platform().startswith("macOS")
 hbb_name = 'rustdesk' + ('.exe' if windows else '')
 exe_path = 'target/release/' + hbb_name
+DEB_PACKAGE_NAME = 'duckdesk'
+LEGACY_DEB_PACKAGE_NAME = 'rustdesk'
 if windows:
     win_arch = 'arm64' if platform.machine().lower() in ('arm64', 'aarch64') else 'x64'
     flutter_build_dir = f'build/windows/{win_arch}/runner/Release/'
@@ -352,7 +354,7 @@ def get_features(args):
         # And only on the deb branch. The other three Linux paths (pacman/yum/zypper) package
         # straight from `target/release` without bundling libdrmtap, without the rename, without
         # Conflicts/Provides and without assert_staged_binary_is_drm() -- so they would emit a
-        # package NAMED `rustdesk` carrying the consent-bypass backend and the root-side uinput
+        # package NAMED `duckdesk` carrying the consent-bypass backend and the root-side uinput
         # injection. The separate package name is the informed consent this feature rests on, so
         # refuse rather than ship a stock-named build of it.
         branch = linux_packaging_branch()
@@ -380,7 +382,7 @@ def generate_control_file(version, rockchip_linux=False):
     control_file_path = "../res/DEBIAN/control"
     system2('/bin/rm -rf %s' % control_file_path)
 
-    content = """Package: rustdesk
+    content = """Package: %s
 Section: net
 Priority: optional
 Version: %s
@@ -389,9 +391,12 @@ Maintainer: rustdesk <info@rustdesk.com>
 Homepage: https://rustdesk.com
 Depends: libgtk-3-0t64 | libgtk-3-0, libxcb-randr0, libxdo3 | libxdo4, libxfixes3, libxcb-shape0, libxcb-xfixes0, libasound2t64 | libasound2, libsystemd0, curl, libva2, libva-drm2, libva-x11-2, libgstreamer-plugins-base1.0-0, libpam0g, gstreamer1.0-pipewire%s
 Recommends: libayatana-appindicator3-1
-Description: A remote control software.
+Conflicts: %s
+Replaces: %s
+Description: DuckDesk remote control software.
 
-""" % (version, get_deb_arch(rockchip_linux), get_deb_extra_depends())
+""" % (DEB_PACKAGE_NAME, version, get_deb_arch(rockchip_linux), get_deb_extra_depends(),
+       LEGACY_DEB_PACKAGE_NAME, LEGACY_DEB_PACKAGE_NAME)
     file = open(control_file_path, "w")
     file.write(content)
     file.close()
@@ -589,7 +594,7 @@ def _assert_so_has_egl(so_path):
             'libgles2-mesa-dev; Arch: mesa libglvnd).')
 
 
-DRM_PACKAGE_NAME = 'rustdesk-unattended-wayland'
+DRM_PACKAGE_NAME = f'{DEB_PACKAGE_NAME}-unattended-wayland'
 
 
 def assert_so_satisfies_the_runtime_abi_gate(so_path):
@@ -701,9 +706,14 @@ def retarget_control_to_drm_variant():
         lines = f.readlines()
     out = []
     for line in lines:
-        if line.startswith('Package: rustdesk'):
+        if line.startswith(f'Package: {DEB_PACKAGE_NAME}'):
             out.append(f'Package: {DRM_PACKAGE_NAME}\n')
-            out.append('Conflicts: rustdesk\nReplaces: rustdesk\nProvides: rustdesk\n')
+            out.append(
+                f'Conflicts: {DEB_PACKAGE_NAME}, {LEGACY_DEB_PACKAGE_NAME}\n'
+                f'Replaces: {DEB_PACKAGE_NAME}, {LEGACY_DEB_PACKAGE_NAME}\n'
+                f'Provides: {DEB_PACKAGE_NAME}\n')
+        elif line.startswith(('Conflicts:', 'Replaces:')):
+            continue
         elif line.startswith('Depends:'):
             # 2.4.101 is where drmModeGetFB2 landed; below it libdrmtap loads and can never capture.
             out.append(line.rstrip('\n') + ', libdrm2 (>= 2.4.101), libegl1, libgles2, '
@@ -711,7 +721,7 @@ def retarget_control_to_drm_variant():
         else:
             out.append(line)
     body = ''.join(out)
-    # Fail loudly rather than silently shipping a package that says `rustdesk`: a stock control file
+    # Fail loudly rather than silently shipping a package with the stock name: a stock control file
     # that stopped matching either anchor would otherwise produce a variant deb wearing the stock name.
     if f'Package: {DRM_PACKAGE_NAME}\n' not in body or 'libegl1' not in body:
         raise Exception(f'could not retarget {path} to the drm variant; upstream control layout changed')
@@ -783,12 +793,12 @@ def build_flutter_deb(version, features, rockchip_linux=False):
     system2('/bin/rm -rf ../res/DEBIAN/control')
     os.rename(
         'rustdesk.deb',
-        f'../rustdesk-{version}{get_package_suffix(rockchip_linux)}.deb'
+        f'../{DEB_PACKAGE_NAME}-{version}{get_package_suffix(rockchip_linux)}.deb'
     )
     if ships_so:
         # Named apart from the stock package so installing the consent-free variant is a deliberate act.
         os.rename(
-            f'../rustdesk-{version}{get_package_suffix(rockchip_linux)}.deb',
+            f'../{DEB_PACKAGE_NAME}-{version}{get_package_suffix(rockchip_linux)}.deb',
             f'../{DRM_PACKAGE_NAME}-{version}.deb'
         )
     os.chdir("..")
@@ -928,11 +938,11 @@ def build_deb_from_folder(version, binary_folder, want_drm=False, rockchip_linux
     system2('/bin/rm -rf ../res/DEBIAN/control')
     os.rename(
         'rustdesk.deb',
-        f'../rustdesk-{version}{get_package_suffix(rockchip_linux)}.deb'
+        f'../{DEB_PACKAGE_NAME}-{version}{get_package_suffix(rockchip_linux)}.deb'
     )
     if want_drm:
         os.rename(
-            f'../rustdesk-{version}{get_package_suffix(rockchip_linux)}.deb',
+            f'../{DEB_PACKAGE_NAME}-{version}{get_package_suffix(rockchip_linux)}.deb',
             f'../{DRM_PACKAGE_NAME}-{version}.deb'
         )
     os.chdir("..")
@@ -1197,7 +1207,7 @@ def main():
                 system2('cp libsciter-gtk.so tmpdeb/usr/share/duckdesk/')
                 md5_file_folder("tmpdeb/")
                 system2('dpkg-deb -b tmpdeb rustdesk.deb; /bin/rm -rf tmpdeb/')
-                os.rename('rustdesk.deb', 'rustdesk-%s.deb' % version)
+                os.rename('rustdesk.deb', '%s-%s.deb' % (DEB_PACKAGE_NAME, version))
 
 
 def md5_file(fn):
