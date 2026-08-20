@@ -2689,6 +2689,23 @@ pub fn send_message_to_hnwd(
     return true;
 }
 
+pub fn show_sciter_main_window() -> bool {
+    unsafe {
+        let window_name = wide_string(&crate::get_app_name());
+        let window = FindWindowW(null_mut(), window_name.as_ptr());
+        if window.is_null() {
+            return false;
+        }
+        if IsIconic(window) != 0 {
+            ShowWindow(window, SW_RESTORE);
+        } else {
+            ShowWindow(window, SW_SHOWNORMAL);
+        }
+        SetForegroundWindow(window);
+        true
+    }
+}
+
 pub fn get_logon_user_token(user: &str, pwd: &str) -> ResultType<HANDLE> {
     let user_split = user.split("\\").collect::<Vec<&str>>();
     let wuser = wide_string(user_split.get(1).unwrap_or(&user));

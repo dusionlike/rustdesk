@@ -104,6 +104,10 @@ fn make_tray() -> hbb_common::ResultType<()> {
 
     let open_func = move || {
         if cfg!(not(feature = "flutter")) {
+            #[cfg(windows)]
+            if crate::platform::windows::show_sciter_main_window() {
+                return;
+            }
             crate::run_me::<&str>(vec![]).ok();
             return;
         }
