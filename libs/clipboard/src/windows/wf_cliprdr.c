@@ -3353,7 +3353,7 @@ wf_cliprdr_server_file_contents_request(CliprdrClientContext *context,
 	HRESULT hRet = S_OK;
 	FORMATETC vFormatEtc;
 	LPDATAOBJECT pDataObj = NULL;
-	STGMEDIUM vStgMedium;
+	STGMEDIUM vStgMedium = { 0 };
 	BOOL bIsStreamFile = TRUE;
 	static LPSTREAM pStreamStc = NULL;
 	static UINT32 uStreamIdStc = 0;
@@ -3362,6 +3362,7 @@ wf_cliprdr_server_file_contents_request(CliprdrClientContext *context,
 	UINT rc = ERROR_INTERNAL_ERROR;
 	UINT sRc;
 	UINT32 cbRequested;
+	BOOL use_file_path;
 
 	if (!context || !fileContentsRequest)
 	{
@@ -3375,6 +3376,11 @@ wf_cliprdr_server_file_contents_request(CliprdrClientContext *context,
 	{
 		return ERROR_INTERNAL_ERROR;
 	}
+
+	use_file_path = fileContentsRequest->dwFlags == FILECONTENTS_RANGE &&
+		fileContentsRequest->listIndex < clipboard->nFiles &&
+		clipboard->file_names && clipboard->file_names[fileContentsRequest->listIndex] &&
+		clipboard->file_names[fileContentsRequest->listIndex][0] != L'\0';
 
 	// If the clipboard is set by the instance, or the file descriptor is from remote,
 	// we should not process the request.
@@ -3396,7 +3402,7 @@ wf_cliprdr_server_file_contents_request(CliprdrClientContext *context,
 	// if connections are in the same process.
 	// But if connections are in different processes, it is not easy to notify the other process.
 	// So we just ignore the request from `C` in this case.
-	if (is_set_by_instance(clipboard) || is_file_descriptor_from_remote()) {
+	if (!use_file_path && (is_set_by_instance(clipboard) || is_file_descriptor_from_remote())) {
 		rc = ERROR_INTERNAL_ERROR;
 		goto exit;
 	}
@@ -3410,6 +3416,24 @@ wf_cliprdr_server_file_contents_request(CliprdrClientContext *context,
 	if (!pData)
 	{
 		rc = ERROR_INTERNAL_ERROR;
+		goto exit;
+	}
+
+	/* Prefer the captured filesystem path before OLE state checks. Windows 7
+	 * providers can hold the clipboard mutex while serving delayed data. */
+	if (use_file_path)
+	{
+		if (!wf_cliprdr_get_file_contents(
+				clipboard->file_names[fileContentsRequest->listIndex], pData,
+				fileContentsRequest->nPositionLow, fileContentsRequest->nPositionHigh,
+				cbRequested, &uSize))
+		{
+			/* Return a bounded failure instead of entering a provider-owned IStream. */
+			rc = ERROR_INTERNAL_ERROR;
+			goto exit;
+		}
+
+		rc = CHANNEL_RC_OK;
 		goto exit;
 	}
 
