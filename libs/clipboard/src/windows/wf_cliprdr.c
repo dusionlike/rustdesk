@@ -3353,7 +3353,7 @@ wf_cliprdr_server_file_contents_request(CliprdrClientContext *context,
 	HRESULT hRet = S_OK;
 	FORMATETC vFormatEtc;
 	LPDATAOBJECT pDataObj = NULL;
-	STGMEDIUM vStgMedium;
+	STGMEDIUM vStgMedium = { 0 };
 	BOOL bIsStreamFile = TRUE;
 	static LPSTREAM pStreamStc = NULL;
 	static UINT32 uStreamIdStc = 0;
@@ -3410,6 +3410,38 @@ wf_cliprdr_server_file_contents_request(CliprdrClientContext *context,
 	if (!pData)
 	{
 		rc = ERROR_INTERNAL_ERROR;
+		goto exit;
+	}
+
+	/* Prefer the verified filesystem path for ordinary files.  Some Windows 7
+	 * clipboard providers block while serving the delayed IStream range read. */
+	if (fileContentsRequest->dwFlags == FILECONTENTS_RANGE &&
+		fileContentsRequest->listIndex < clipboard->nFiles &&
+		clipboard->file_names && clipboard->file_names[fileContentsRequest->listIndex] &&
+		clipboard->fileDescriptor && clipboard->fileDescriptor[fileContentsRequest->listIndex] &&
+		!(clipboard->fileDescriptor[fileContentsRequest->listIndex]->dwFileAttributes &
+		  FILE_ATTRIBUTE_DIRECTORY))
+	{
+		if (clipboard->context->HandleClipboardFiles && clipboard->nFiles > 0 &&
+			fileContentsRequest->listIndex == (UINT32)clipboard->first_file_index &&
+			fileContentsRequest->nPositionLow == 0 &&
+			fileContentsRequest->nPositionHigh == 0)
+		{
+			clipboard->context->HandleClipboardFiles(fileContentsRequest->connID,
+				clipboard->nFiles, clipboard->file_names);
+		}
+
+		if (!wf_cliprdr_get_file_contents(
+				clipboard->file_names[fileContentsRequest->listIndex], pData,
+				fileContentsRequest->nPositionLow, fileContentsRequest->nPositionHigh,
+				cbRequested, &uSize))
+		{
+			/* Return a bounded failure instead of entering a provider-owned IStream. */
+			rc = ERROR_INTERNAL_ERROR;
+			goto exit;
+		}
+
+		rc = CHANNEL_RC_OK;
 		goto exit;
 	}
 
