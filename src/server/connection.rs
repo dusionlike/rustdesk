@@ -207,6 +207,10 @@ enum MessageInput {
     Key((KeyEvent, bool)),
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     Pointer((PointerDeviceEvent, i32)),
+    #[cfg(target_os = "windows")]
+    TaskbarGuardOn(i32),
+    #[cfg(target_os = "windows")]
+    TaskbarGuardOff(i32),
     BlockOn,
     BlockOff,
     #[cfg(all(feature = "flutter", feature = "plugin_framework"))]
@@ -1204,6 +1208,16 @@ impl Connection {
                     MessageInput::Pointer((msg, id)) => {
                         handle_pointer(&msg, id);
                     }
+                    #[cfg(target_os = "windows")]
+                    MessageInput::TaskbarGuardOn(conn_id) => {
+                        crate::platform::windows::try_change_desktop();
+                        crate::server::input_service::enable_taskbar_cursor_guard(conn_id);
+                    }
+                    #[cfg(target_os = "windows")]
+                    MessageInput::TaskbarGuardOff(conn_id) => {
+                        crate::platform::windows::try_change_desktop();
+                        crate::server::input_service::release_taskbar_cursor_guard(conn_id);
+                    }
                     MessageInput::BlockOn => {
                         let (ok, msg) = crate::platform::block_input(true);
                         if ok {
@@ -1268,6 +1282,8 @@ impl Connection {
         }
         #[cfg(target_os = "linux")]
         clear_remapped_keycode();
+        #[cfg(target_os = "windows")]
+        crate::server::input_service::release_all_taskbar_cursor_guards();
         log::debug!("Input thread exited");
     }
 
@@ -2156,6 +2172,15 @@ impl Connection {
         let is_remote = self.is_remote();
         if is_remote && !self.services_subed {
             self.services_subed = true;
+            #[cfg(target_os = "windows")]
+            if self.peer_keyboard_enabled() {
+                if let Err(err) = self
+                    .tx_input
+                    .send(MessageInput::TaskbarGuardOn(self.inner.id()))
+                {
+                    log::debug!("Failed to enqueue taskbar guard setup: {}", err);
+                }
+            }
             if let Some(s) = self.server.upgrade() {
                 let mut noperms = Vec::new();
                 if !self.peer_keyboard_enabled() && !self.show_remote_cursor {
@@ -6523,6 +6548,14 @@ impl Drop for Connection {
     fn drop(&mut self) {
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         self.release_pressed_modifiers();
+
+        #[cfg(target_os = "windows")]
+        if let Err(err) = self
+            .tx_input
+            .send(MessageInput::TaskbarGuardOff(self.inner.id()))
+        {
+            log::debug!("Failed to enqueue taskbar guard cleanup: {}", err);
+        }
 
         if let Some(s) = self.terminal_generic_service.as_ref() {
             s.join();

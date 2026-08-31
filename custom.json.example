@@ -1,0 +1,5 @@
+{
+  "default-settings": {
+    "kiosk-prevent-taskbar": "Y"
+  }
+}

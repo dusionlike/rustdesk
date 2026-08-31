@@ -52,7 +52,10 @@ use winapi::{
         securitybaseapi::{
             AllocateAndInitializeSid, DuplicateToken, EqualSid, FreeSid, GetTokenInformation,
         },
-        shellapi::ShellExecuteW,
+        shellapi::{
+            SHAppBarMessage, ShellExecuteW, ABE_BOTTOM, ABE_LEFT, ABE_RIGHT, ABE_TOP,
+            ABM_GETTASKBARPOS, APPBARDATA,
+        },
         sysinfoapi::{GetNativeSystemInfo, SYSTEM_INFO},
         winbase::*,
         wingdi::*,
@@ -169,6 +172,64 @@ pub fn set_cursor_pos(x: i32, y: i32) -> bool {
         }
         true
     }
+}
+
+pub fn get_clip_cursor_rect() -> Option<(i32, i32, i32, i32)> {
+    unsafe {
+        let mut rect: RECT = mem::zeroed();
+        if GetClipCursor(&mut rect) == FALSE {
+            log::warn!("GetClipCursor failed: {}", io::Error::last_os_error());
+            return None;
+        }
+        Some((rect.left, rect.top, rect.right, rect.bottom))
+    }
+}
+
+pub fn get_virtual_screen_rect() -> Option<(i32, i32, i32, i32)> {
+    unsafe {
+        let left = GetSystemMetrics(SM_XVIRTUALSCREEN);
+        let top = GetSystemMetrics(SM_YVIRTUALSCREEN);
+        let width = GetSystemMetrics(SM_CXVIRTUALSCREEN);
+        let height = GetSystemMetrics(SM_CYVIRTUALSCREEN);
+        if width <= 0 || height <= 0 {
+            return None;
+        }
+        Some((
+            left,
+            top,
+            left.saturating_add(width),
+            top.saturating_add(height),
+        ))
+    }
+}
+
+/// Return a virtual-screen cursor area that stays away from the taskbar edge.
+pub fn get_taskbar_safe_cursor_rect() -> Option<(i32, i32, i32, i32)> {
+    const EDGE_MARGIN: i32 = 2;
+
+    let (mut left, mut top, mut right, mut bottom) = get_virtual_screen_rect()?;
+    let mut appbar: APPBARDATA = unsafe { mem::zeroed() };
+    appbar.cbSize = mem::size_of::<APPBARDATA>() as DWORD;
+    let edge = unsafe {
+        if SHAppBarMessage(ABM_GETTASKBARPOS, &mut appbar as *mut _) != 0 {
+            std::ptr::addr_of!(appbar.uEdge).read_unaligned()
+        } else {
+            ABE_BOTTOM
+        }
+    };
+
+    match edge {
+        ABE_LEFT => left = left.saturating_add(EDGE_MARGIN),
+        ABE_TOP => top = top.saturating_add(EDGE_MARGIN),
+        ABE_RIGHT => right = right.saturating_sub(EDGE_MARGIN),
+        ABE_BOTTOM => bottom = bottom.saturating_sub(EDGE_MARGIN),
+        _ => bottom = bottom.saturating_sub(EDGE_MARGIN),
+    }
+
+    if left >= right || top >= bottom {
+        return None;
+    }
+    Some((left, top, right, bottom))
 }
 
 /// Clip cursor to a rectangle. Pass None to unclip.
