@@ -444,9 +444,7 @@ class _ConnectionTabPageState extends State<ConnectionTabPage> {
         await setNewConnectWindowFrame(windowId(), id!, prePeerCount,
             WindowType.RemoteDesktop, display, screenRect);
         Future.delayed(Duration(milliseconds: isWindows ? 100 : 0), () async {
-          if (!shouldSuppressWindowFocusOnConnect()) {
-            await windowOnTop(windowId());
-          }
+          await windowOnTop(windowId());
         });
       });
       ConnectionTypeState.init(id);
@@ -487,7 +485,7 @@ class _ConnectionTabPageState extends State<ConnectionTabPage> {
       reloadCurrentWindow();
     } else if (call.method == kWindowEventActiveSession) {
       final jumpOk = tabController.jumpToByKey(call.arguments);
-      if (jumpOk && !shouldSuppressWindowFocusOnConnect()) {
+      if (jumpOk) {
         windowOnTop(windowId());
       }
       return jumpOk;
@@ -496,7 +494,7 @@ class _ConnectionTabPageState extends State<ConnectionTabPage> {
       final id = args['id'];
       final display = args['display'];
       final jumpOk = tabController.jumpToByKeyAndDisplay(id, display);
-      if (jumpOk && !shouldSuppressWindowFocusOnConnect()) {
+      if (jumpOk) {
         windowOnTop(windowId());
       }
       return jumpOk;
