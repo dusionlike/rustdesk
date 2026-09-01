@@ -2706,6 +2706,49 @@ pub fn get_double_click_time() -> u32 {
     unsafe { GetDoubleClickTime() }
 }
 
+pub fn is_windows_7() -> bool {
+    !hbb_common::platform::windows::is_windows_version_or_greater(6, 2, 0, 0, 0)
+}
+
+pub fn show_windows_7_tray_menu(hwnd: isize, menu: isize) {
+    use winapi::shared::{minwindef::*, windef::*};
+    use winapi::um::{processthreadsapi::GetCurrentThreadId, winuser::*};
+
+    unsafe {
+        let mut cursor = POINT { x: 0, y: 0 };
+        if GetCursorPos(&mut cursor) == FALSE {
+            return;
+        }
+
+        let tray_hwnd = hwnd as HWND;
+        let foreground_hwnd = GetForegroundWindow();
+        let foreground_thread = if foreground_hwnd.is_null() {
+            0
+        } else {
+            GetWindowThreadProcessId(foreground_hwnd, null_mut())
+        };
+        let current_thread = GetCurrentThreadId();
+        let attached = foreground_thread != 0
+            && foreground_thread != current_thread
+            && AttachThreadInput(foreground_thread, current_thread, TRUE) != FALSE;
+
+        TrackPopupMenu(
+            menu as HMENU,
+            TPM_BOTTOMALIGN | TPM_LEFTALIGN,
+            cursor.x,
+            cursor.y,
+            0,
+            tray_hwnd,
+            null_mut(),
+        );
+
+        if attached {
+            AttachThreadInput(foreground_thread, current_thread, FALSE);
+        }
+        PostMessageW(tray_hwnd, WM_NULL, 0, 0);
+    }
+}
+
 pub fn wide_string(s: &str) -> Vec<u16> {
     use std::os::windows::prelude::OsStrExt;
     std::ffi::OsStr::new(s)

@@ -30,6 +30,8 @@ fn make_tray() -> hbb_common::ResultType<()> {
         menu::{Menu, MenuEvent, MenuItem},
         TrayIcon, TrayIconBuilder, TrayIconEvent as TrayEvent,
     };
+    #[cfg(windows)]
+    use tray_icon::menu::ContextMenu;
 
     // Duplicated tray icons kept piling up through the blind spots of
     // `check_process("--tray", ..)`. https://github.com/rustdesk/rustdesk/issues/15689
@@ -101,6 +103,8 @@ fn make_tray() -> hbb_common::ResultType<()> {
     let tray_channel = TrayEvent::receiver();
     #[cfg(windows)]
     let (ipc_sender, ipc_receiver) = std::sync::mpsc::channel::<Data>();
+    #[cfg(windows)]
+    let use_windows_7_tray_menu = crate::platform::windows::is_windows_7();
 
     let open_func = move || {
         if cfg!(not(feature = "flutter")) {
@@ -168,7 +172,9 @@ fn make_tray() -> hbb_common::ResultType<()> {
             {
                 // Required since tray-icon 0.17
                 // Fixes #15215, #15222, #15410
-                builder = builder.with_menu_on_left_click(false);
+                builder = builder
+                    .with_menu_on_left_click(false)
+                    .with_menu_on_right_click(!use_windows_7_tray_menu);
             }
             let tray = builder.build();
             match tray {
@@ -242,6 +248,21 @@ fn make_tray() -> hbb_common::ResultType<()> {
                         }
                         open_func();
                         last_click = std::time::Instant::now();
+                    } else if use_windows_7_tray_menu
+                        && button == tray_icon::MouseButton::Right
+                        && button_state == tray_icon::MouseButtonState::Down
+                    {
+                        let tray_hwnd = _tray_icon
+                            .lock()
+                            .unwrap()
+                            .as_ref()
+                            .map(|tray| tray.hwnd() as isize);
+                        if let Some(tray_hwnd) = tray_hwnd {
+                            crate::platform::windows::show_windows_7_tray_menu(
+                                tray_hwnd,
+                                tray_menu.hpopupmenu(),
+                            );
+                        }
                     }
                 }
                 _ => {}
