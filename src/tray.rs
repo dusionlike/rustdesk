@@ -256,7 +256,7 @@ fn make_tray() -> hbb_common::ResultType<()> {
                             .lock()
                             .unwrap()
                             .as_ref()
-                            .map(|tray| tray.hwnd() as isize);
+                            .map(|tray| tray.window_handle() as isize);
                         if let Some(tray_hwnd) = tray_hwnd {
                             crate::platform::windows::show_windows_7_tray_menu(
                                 tray_hwnd,
