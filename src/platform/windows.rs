@@ -2810,6 +2810,35 @@ pub fn show_sciter_main_window() -> bool {
     }
 }
 
+// Keep direct Sciter launches in a single process per interactive session.
+pub fn try_lock_sciter_main_single_instance() -> bool {
+    use winapi::um::{
+        errhandlingapi::{GetLastError, SetLastError},
+        synchapi::CreateMutexW,
+    };
+    let name = wide_string(&format!("Local\\{}_sciter_main", crate::get_app_name()));
+    unsafe {
+        SetLastError(0);
+        let handle = CreateMutexW(null_mut(), FALSE, name.as_ptr());
+        let last_error = GetLastError();
+        if !handle.is_null() {
+            if last_error == ERROR_ALREADY_EXISTS {
+                CloseHandle(handle);
+                return false;
+            }
+            return true;
+        }
+        if last_error == ERROR_ACCESS_DENIED {
+            return false;
+        }
+        log::warn!(
+            "Failed to create the Sciter main single instance mutex: {}",
+            io::Error::from_raw_os_error(last_error as _)
+        );
+        true
+    }
+}
+
 pub fn get_logon_user_token(user: &str, pwd: &str) -> ResultType<HANDLE> {
     let user_split = user.split("\\").collect::<Vec<&str>>();
     let wuser = wide_string(user_split.get(1).unwrap_or(&user));

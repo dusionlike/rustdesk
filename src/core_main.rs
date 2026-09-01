@@ -134,6 +134,11 @@ pub fn core_main() -> Option<Vec<String>> {
         args.retain(|arg| arg != "--install");
         flutter_args.retain(|arg| arg != "--install");
     }
+    #[cfg(all(windows, not(feature = "flutter")))]
+    if args.is_empty() && !crate::platform::windows::try_lock_sciter_main_single_instance() {
+        crate::platform::windows::show_sciter_main_window();
+        return None;
+    }
     if args.len() > 0 {
         if args[0] == "--version" {
             println!("{}", crate::VERSION);
