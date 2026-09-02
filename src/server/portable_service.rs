@@ -778,8 +778,6 @@ pub mod server {
                                         if n == 0 {
                                             log::info!("Connection count equals 0, exit");
                                             stream.send(&Data::DataPortableService(WillClose)).await.ok();
-                                            crate::platform::windows::try_change_desktop();
-                                            crate::input_service::release_all_taskbar_cursor_guards();
                                             break;
                                         }
                                     }
@@ -820,8 +818,6 @@ pub mod server {
             }
         }
 
-        crate::platform::windows::try_change_desktop();
-        crate::input_service::release_all_taskbar_cursor_guards();
         *EXIT.lock().unwrap() = true;
     }
 }
