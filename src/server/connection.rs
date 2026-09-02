@@ -2074,6 +2074,9 @@ impl Connection {
                 self.send(msg_out).await;
             }
 
+            #[cfg(windows)]
+            try_activate_screen(self.inner.id(), self.peer_keyboard_enabled());
+            #[cfg(not(windows))]
             try_activate_screen();
 
             match super::display_service::update_get_sync_displays_on_login().await {
@@ -6314,14 +6317,21 @@ async fn start_ipc(
 }
 
 // in case screen is sleep and blank, here to activate it
-fn try_activate_screen() {
-    #[cfg(windows)]
-    std::thread::spawn(|| {
+#[cfg(windows)]
+fn try_activate_screen(conn_id: i32, protect_taskbar: bool) {
+    std::thread::spawn(move || {
+        crate::platform::windows::try_change_desktop();
+        if protect_taskbar {
+            crate::server::input_service::enable_taskbar_cursor_guard(conn_id);
+        }
         mouse_move_relative(-6, -6);
         std::thread::sleep(std::time::Duration::from_millis(30));
         mouse_move_relative(6, 6);
     });
 }
+
+#[cfg(not(windows))]
+fn try_activate_screen() {}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum AlarmAuditType {
