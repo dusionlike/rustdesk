@@ -17,8 +17,6 @@ use rdev::{self, EventType, Key as RdevKey, KeyCode, RawKey};
 use rdev::{CGEventSourceStateID, CGEventTapLocation, VirtualInput};
 #[cfg(target_os = "linux")]
 use scrap::wayland::pipewire::RDP_SESSION_INFO;
-#[cfg(target_os = "windows")]
-use std::collections::HashSet;
 #[cfg(target_os = "linux")]
 use std::sync::mpsc;
 use std::{
@@ -34,114 +32,6 @@ use winapi::um::winuser::WHEEL_DELTA;
 
 const INVALID_CURSOR_POS: i32 = i32::MIN;
 const INVALID_DISPLAY_IDX: i32 = -1;
-
-#[cfg(target_os = "windows")]
-const KIOSK_PREVENT_TASKBAR_OPTION: &str = "kiosk-prevent-taskbar";
-
-#[cfg(target_os = "windows")]
-#[derive(Default)]
-struct TaskbarCursorGuardState {
-    connections: HashSet<i32>,
-    original_clip: Option<(i32, i32, i32, i32)>,
-    original_was_unclipped: bool,
-}
-
-#[cfg(target_os = "windows")]
-lazy_static::lazy_static! {
-    static ref TASKBAR_CURSOR_GUARD: Mutex<TaskbarCursorGuardState> = Default::default();
-    static ref TASKBAR_CURSOR_GUARD_ENABLED: bool =
-        crate::get_builtin_option(KIOSK_PREVENT_TASKBAR_OPTION) == "Y";
-}
-
-#[cfg(target_os = "windows")]
-fn taskbar_cursor_guard_enabled() -> bool {
-    *TASKBAR_CURSOR_GUARD_ENABLED
-}
-
-#[cfg(target_os = "windows")]
-fn ensure_taskbar_cursor_guard(conn_id: i32) {
-    if !taskbar_cursor_guard_enabled() {
-        return;
-    }
-
-    let mut guard = TASKBAR_CURSOR_GUARD.lock().unwrap();
-    if guard.connections.contains(&conn_id) {
-        return;
-    }
-    if !guard.connections.is_empty() {
-        guard.connections.insert(conn_id);
-        return;
-    }
-
-    let Some(safe_rect) = crate::platform::windows::get_taskbar_safe_cursor_rect() else {
-        log::warn!("Cannot determine a safe cursor area for taskbar protection");
-        return;
-    };
-
-    guard.connections.insert(conn_id);
-
-    guard.original_clip = crate::platform::windows::get_clip_cursor_rect();
-    guard.original_was_unclipped = guard.original_clip.is_some()
-        && crate::platform::windows::get_virtual_screen_rect() == guard.original_clip;
-    if !crate::platform::windows::clip_cursor(Some(safe_rect)) {
-        guard.connections.remove(&conn_id);
-        guard.original_clip = None;
-        guard.original_was_unclipped = false;
-        return;
-    }
-
-    if let Some((x, y)) = crate::platform::windows::get_cursor_pos() {
-        let (left, top, right, bottom) = safe_rect;
-        let x = x.clamp(left, right.saturating_sub(1));
-        let y = y.clamp(top, bottom.saturating_sub(1));
-        if !crate::platform::windows::set_cursor_pos(x, y) {
-            log::debug!("Failed to move cursor inside the taskbar-safe area");
-        }
-    }
-}
-
-#[cfg(target_os = "windows")]
-pub fn enable_taskbar_cursor_guard(conn_id: i32) {
-    ensure_taskbar_cursor_guard(conn_id);
-}
-
-#[cfg(target_os = "windows")]
-fn restore_taskbar_cursor_guard() {
-    let mut guard = TASKBAR_CURSOR_GUARD.lock().unwrap();
-    guard.connections.clear();
-    let original_clip = guard.original_clip.take();
-    let original_was_unclipped = guard.original_was_unclipped;
-    guard.original_was_unclipped = false;
-    drop(guard);
-
-    let restored = if original_was_unclipped {
-        crate::platform::windows::clip_cursor(None)
-    } else {
-        crate::platform::windows::clip_cursor(original_clip)
-    };
-    if !restored {
-        log::warn!("Failed to restore the original cursor area");
-    }
-}
-
-#[cfg(target_os = "windows")]
-pub fn release_taskbar_cursor_guard(conn_id: i32) {
-    let should_restore = {
-        let mut guard = TASKBAR_CURSOR_GUARD.lock().unwrap();
-        guard.connections.remove(&conn_id) && guard.connections.is_empty()
-    };
-    if should_restore {
-        restore_taskbar_cursor_guard();
-    }
-}
-
-#[cfg(target_os = "windows")]
-pub fn release_all_taskbar_cursor_guards() {
-    let should_restore = !TASKBAR_CURSOR_GUARD.lock().unwrap().connections.is_empty();
-    if should_restore {
-        restore_taskbar_cursor_guard();
-    }
-}
 
 #[derive(Default)]
 struct StateCursor {
@@ -1222,8 +1112,6 @@ pub fn handle_mouse_simulation_(evt: &MouseEvent, conn: i32) {
 
     #[cfg(windows)]
     crate::platform::windows::try_change_desktop();
-    #[cfg(windows)]
-    ensure_taskbar_cursor_guard(conn);
     let buttons = evt.mask >> 3;
     let evt_type = evt.mask & MOUSE_TYPE_MASK;
     let mut en = ENIGO.lock().unwrap();
