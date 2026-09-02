@@ -29,10 +29,7 @@ use std::{
     },
     path::*,
     ptr::null_mut,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc, Mutex,
-    },
+    sync::{atomic::Ordering, Arc, Mutex},
     time::{Duration, Instant},
 };
 use wallpaper;
@@ -45,13 +42,12 @@ use winapi::{
         errhandlingapi::GetLastError,
         handleapi::{CloseHandle, INVALID_HANDLE_VALUE},
         libloaderapi::{
-            GetModuleHandleW, GetProcAddress, LoadLibraryA, LoadLibraryExA,
-            LOAD_LIBRARY_SEARCH_SYSTEM32,
+            GetProcAddress, LoadLibraryA, LoadLibraryExA, LOAD_LIBRARY_SEARCH_SYSTEM32,
         },
         minwinbase::STILL_ACTIVE,
         processthreadsapi::{
-            GetCurrentProcess, GetCurrentProcessId, GetCurrentThreadId, GetExitCodeProcess,
-            OpenProcess, OpenProcessToken, ProcessIdToSessionId, PROCESS_INFORMATION, STARTUPINFOW,
+            GetCurrentProcess, GetCurrentProcessId, GetExitCodeProcess, OpenProcess,
+            OpenProcessToken, ProcessIdToSessionId, PROCESS_INFORMATION, STARTUPINFOW,
         },
         securitybaseapi::{
             AllocateAndInitializeSid, DuplicateToken, EqualSid, FreeSid, GetTokenInformation,
@@ -214,35 +210,19 @@ pub fn get_taskbar_safe_cursor_rect() -> Option<(i32, i32, i32, i32)> {
     let (mut left, mut top, mut right, mut bottom) = get_virtual_screen_rect()?;
     let mut appbar: APPBARDATA = unsafe { mem::zeroed() };
     appbar.cbSize = mem::size_of::<APPBARDATA>() as DWORD;
-    let taskbar_pos = unsafe {
+    let edge = unsafe {
         if SHAppBarMessage(ABM_GETTASKBARPOS, &mut appbar as *mut _) != 0 {
-            Some((
-                std::ptr::addr_of!(appbar.uEdge).read_unaligned(),
-                (
-                    appbar.rc.left,
-                    appbar.rc.top,
-                    appbar.rc.right,
-                    appbar.rc.bottom,
-                ),
-            ))
+            std::ptr::addr_of!(appbar.uEdge).read_unaligned()
         } else {
-            None
+            ABE_BOTTOM
         }
     };
 
-    match taskbar_pos {
-        Some((ABE_LEFT, (taskbar_left, _, _, _))) => {
-            left = left.max(taskbar_left.saturating_add(EDGE_MARGIN))
-        }
-        Some((ABE_TOP, (_, taskbar_top, _, _))) => {
-            top = top.max(taskbar_top.saturating_add(EDGE_MARGIN))
-        }
-        Some((ABE_RIGHT, (_, _, taskbar_right, _))) => {
-            right = right.min(taskbar_right.saturating_sub(EDGE_MARGIN))
-        }
-        Some((ABE_BOTTOM, (_, _, _, taskbar_bottom))) => {
-            bottom = bottom.min(taskbar_bottom.saturating_sub(EDGE_MARGIN))
-        }
+    match edge {
+        ABE_LEFT => left = left.saturating_add(EDGE_MARGIN),
+        ABE_TOP => top = top.saturating_add(EDGE_MARGIN),
+        ABE_RIGHT => right = right.saturating_sub(EDGE_MARGIN),
+        ABE_BOTTOM => bottom = bottom.saturating_sub(EDGE_MARGIN),
         _ => bottom = bottom.saturating_sub(EDGE_MARGIN),
     }
 
@@ -273,168 +253,6 @@ pub fn clip_cursor(rect: Option<(i32, i32, i32, i32)>) -> bool {
             return false;
         }
         true
-    }
-}
-
-struct TaskbarMouseHook {
-    stop: Arc<AtomicBool>,
-    thread_id: DWORD,
-    thread: std::thread::JoinHandle<()>,
-}
-
-lazy_static::lazy_static! {
-    static ref TASKBAR_MOUSE_HOOK: Mutex<Option<TaskbarMouseHook>> = Mutex::new(None);
-    static ref TASKBAR_MOUSE_HOOK_RECT: Mutex<Option<(i32, i32, i32, i32)>> = Mutex::new(None);
-    static ref TASKBAR_MOUSE_HOOK_LIFECYCLE: Mutex<()> = Mutex::new(());
-}
-
-fn is_taskbar_mouse_message(message: UINT) -> bool {
-    matches!(
-        message,
-        WM_MOUSEMOVE
-            | WM_LBUTTONDOWN
-            | WM_LBUTTONUP
-            | WM_LBUTTONDBLCLK
-            | WM_RBUTTONDOWN
-            | WM_RBUTTONUP
-            | WM_RBUTTONDBLCLK
-            | WM_MBUTTONDOWN
-            | WM_MBUTTONUP
-            | WM_MBUTTONDBLCLK
-            | WM_MOUSEWHEEL
-            | WM_MOUSEHWHEEL
-            | WM_XBUTTONDOWN
-            | WM_XBUTTONUP
-    )
-}
-
-unsafe extern "system" fn taskbar_mouse_hook(
-    code: c_int,
-    wparam: WPARAM,
-    lparam: LPARAM,
-) -> LRESULT {
-    if code >= 0 && lparam != 0 && is_taskbar_mouse_message(wparam as UINT) {
-        let event = &*(lparam as *const MSLLHOOKSTRUCT);
-        if event.flags & LLMHF_INJECTED != 0 {
-            let safe_rect = TASKBAR_MOUSE_HOOK_RECT.lock().ok().and_then(|rect| *rect);
-            if let Some((left, top, right, bottom)) = safe_rect {
-                let point = event.pt;
-                if point.x < left || point.x >= right || point.y < top || point.y >= bottom {
-                    return 1;
-                }
-            }
-        }
-    }
-
-    CallNextHookEx(null_mut(), code, wparam, lparam)
-}
-
-/// Install a session-local fallback that filters injected mouse events at the taskbar edge.
-pub fn start_taskbar_mouse_guard(rect: (i32, i32, i32, i32)) -> bool {
-    let _lifecycle = TASKBAR_MOUSE_HOOK_LIFECYCLE.lock().unwrap();
-
-    {
-        let current = TASKBAR_MOUSE_HOOK.lock().unwrap();
-        if current.is_some() {
-            if let Ok(mut current_rect) = TASKBAR_MOUSE_HOOK_RECT.lock() {
-                *current_rect = Some(rect);
-                return true;
-            }
-            return false;
-        }
-    }
-
-    if let Ok(mut current_rect) = TASKBAR_MOUSE_HOOK_RECT.lock() {
-        *current_rect = Some(rect);
-    } else {
-        return false;
-    }
-
-    let stop = Arc::new(AtomicBool::new(false));
-    let stop_for_thread = stop.clone();
-    let (thread_id_tx, thread_id_rx) = std::sync::mpsc::channel();
-    let (hook_ready_tx, hook_ready_rx) = std::sync::mpsc::channel();
-    let thread = std::thread::spawn(move || {
-        let thread_id = unsafe { GetCurrentThreadId() };
-        let mut message: MSG = unsafe { mem::zeroed() };
-        unsafe {
-            PeekMessageW(&mut message, null_mut(), 0, 0, PM_NOREMOVE);
-        }
-        if thread_id_tx.send(thread_id).is_err() {
-            return;
-        }
-
-        let module = unsafe { GetModuleHandleW(null_mut()) };
-        let hook = unsafe { SetWindowsHookExW(WH_MOUSE_LL, Some(taskbar_mouse_hook), module, 0) };
-        let installed = !hook.is_null();
-        if hook_ready_tx.send(installed).is_err() {
-            if installed {
-                unsafe { UnhookWindowsHookEx(hook) };
-            }
-            return;
-        }
-        if !installed {
-            return;
-        }
-
-        while !stop_for_thread.load(Ordering::SeqCst) {
-            let result = unsafe { GetMessageW(&mut message, null_mut(), 0, 0) };
-            if result <= 0 {
-                break;
-            }
-        }
-        unsafe {
-            UnhookWindowsHookEx(hook);
-        }
-    });
-
-    let thread_id = thread_id_rx.recv().unwrap_or(0);
-    let installed = hook_ready_rx
-        .recv_timeout(Duration::from_secs(1))
-        .unwrap_or(false);
-    if installed && thread_id != 0 {
-        *TASKBAR_MOUSE_HOOK.lock().unwrap() = Some(TaskbarMouseHook {
-            stop,
-            thread_id,
-            thread,
-        });
-        return true;
-    }
-
-    stop.store(true, Ordering::SeqCst);
-    if thread_id != 0 {
-        unsafe {
-            PostThreadMessageW(thread_id, WM_QUIT, 0, 0);
-        }
-    }
-    if thread.join().is_err() {
-        log::warn!("Taskbar mouse hook thread failed to join");
-    }
-    if let Ok(mut current_rect) = TASKBAR_MOUSE_HOOK_RECT.lock() {
-        *current_rect = None;
-    }
-    false
-}
-
-pub fn stop_taskbar_mouse_guard() {
-    let _lifecycle = TASKBAR_MOUSE_HOOK_LIFECYCLE.lock().unwrap();
-    let hook = TASKBAR_MOUSE_HOOK.lock().unwrap().take();
-    if let Some(TaskbarMouseHook {
-        stop,
-        thread_id,
-        thread,
-    }) = hook
-    {
-        stop.store(true, Ordering::SeqCst);
-        unsafe {
-            PostThreadMessageW(thread_id, WM_QUIT, 0, 0);
-        }
-        if thread.join().is_err() {
-            log::warn!("Taskbar mouse hook thread failed to join");
-        }
-    }
-    if let Ok(mut current_rect) = TASKBAR_MOUSE_HOOK_RECT.lock() {
-        *current_rect = None;
     }
 }
 

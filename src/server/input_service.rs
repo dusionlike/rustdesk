@@ -46,7 +46,6 @@ struct TaskbarCursorGuardState {
     original_was_unclipped: bool,
     safe_rect: Option<(i32, i32, i32, i32)>,
     cursor_clip_applied: bool,
-    mouse_hook_applied: bool,
 }
 
 #[cfg(target_os = "windows")]
@@ -81,14 +80,6 @@ fn ensure_taskbar_cursor_guard(conn_id: i32) {
 
     let mut guard = TASKBAR_CURSOR_GUARD.lock().unwrap();
     if guard.connections.contains(&conn_id) {
-        if let Some(safe_rect) = guard.safe_rect {
-            if crate::platform::windows::get_clip_cursor_rect() != Some(safe_rect) {
-                guard.cursor_clip_applied = crate::platform::windows::clip_cursor(Some(safe_rect));
-                if !guard.cursor_clip_applied {
-                    log::warn!("Failed to reapply the taskbar-safe cursor area");
-                }
-            }
-        }
         return;
     }
     if !guard.connections.is_empty() {
@@ -108,19 +99,14 @@ fn ensure_taskbar_cursor_guard(conn_id: i32) {
         && crate::platform::windows::get_virtual_screen_rect() == guard.original_clip;
     guard.safe_rect = Some(safe_rect);
     guard.cursor_clip_applied = crate::platform::windows::clip_cursor(Some(safe_rect));
-    guard.mouse_hook_applied = crate::platform::windows::start_taskbar_mouse_guard(safe_rect);
     log::info!(
-        "Kiosk taskbar cursor guard active for connection {}: safe_rect={:?}, clip_applied={}, mouse_hook_applied={}",
+        "Kiosk taskbar cursor guard active for connection {}: safe_rect={:?}, clip_applied={}",
         conn_id,
         safe_rect,
-        guard.cursor_clip_applied,
-        guard.mouse_hook_applied
+        guard.cursor_clip_applied
     );
     if !guard.cursor_clip_applied {
         log::warn!("ClipCursor failed; using remote coordinate clamping for taskbar protection");
-    }
-    if !guard.mouse_hook_applied {
-        log::warn!("Low-level taskbar mouse guard could not be installed");
     }
 
     if let Some((x, y)) = crate::platform::windows::get_cursor_pos() {
@@ -164,10 +150,8 @@ fn restore_taskbar_cursor_guard() {
     guard.original_was_unclipped = false;
     guard.safe_rect = None;
     guard.cursor_clip_applied = false;
-    guard.mouse_hook_applied = false;
     drop(guard);
 
-    crate::platform::windows::stop_taskbar_mouse_guard();
     if !cursor_clip_applied {
         return;
     }
@@ -1349,14 +1333,6 @@ pub fn handle_mouse_simulation_(evt: &MouseEvent, conn: i32) {
             let dy = evt
                 .y
                 .clamp(-MAX_RELATIVE_MOUSE_DELTA, MAX_RELATIVE_MOUSE_DELTA);
-            #[cfg(windows)]
-            let (dx, dy) = if let Some((x, y)) = crate::platform::windows::get_cursor_pos() {
-                let (x2, y2) =
-                    constrain_taskbar_cursor_pos(x.saturating_add(dx), y.saturating_add(dy));
-                (x2.saturating_sub(x), y2.saturating_sub(y))
-            } else {
-                (dx, dy)
-            };
             en.mouse_move_relative(dx, dy);
             #[cfg(windows)]
             if let Some((x, y)) = crate::platform::windows::get_cursor_pos() {
